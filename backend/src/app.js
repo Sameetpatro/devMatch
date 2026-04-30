@@ -9,9 +9,27 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const app = express();
 
 app.use(helmet());
+
+// Accept a single origin, an allowlist array, or "*". Vercel preview deploys
+// (e.g. https://dev-match-git-feature-xyz.vercel.app) are matched by suffix
+// against any allowed origin that itself ends in ".vercel.app".
+const corsOriginCheck = (origin, callback) => {
+  if (!origin) return callback(null, true); // curl, server-to-server, same-origin
+  if (env.clientOrigin === '*') return callback(null, true);
+
+  const allowed = env.clientOrigin;
+  const isExact = allowed.includes(origin);
+  const isVercelPreview =
+    origin.endsWith('.vercel.app') &&
+    allowed.some((o) => o.endsWith('.vercel.app'));
+
+  if (isExact || isVercelPreview) return callback(null, true);
+  return callback(new Error(`CORS blocked: ${origin}`));
+};
+
 app.use(
   cors({
-    origin: env.clientOrigin,
+    origin: corsOriginCheck,
     credentials: true,
   })
 );
