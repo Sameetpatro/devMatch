@@ -1,5 +1,5 @@
 // Prisma schema for DevMatch
-// Models (User, Skill, Swipe, Match) will be added in Step 2.
+// Models: User, Skill, UserSkill (M2M), Swipe, Match
 
 generator client {
   provider = "prisma-client-js"
@@ -8,4 +8,93 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum SwipeDirection {
+  LIKE
+  PASS
+}
+
+// ---------- User ----------
+
+model User {
+  id              Int      @id @default(autoincrement())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  role            String   @db.VarChar(60)
+  bio             String?  @db.Text
+  experienceYears Int      @default(0)
+  rating          Float    @default(0)
+  isAvailable     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  skills        UserSkill[]
+  swipesSent    Swipe[]     @relation("SwipesFrom")
+  swipesGot     Swipe[]     @relation("SwipesTo")
+  matchesAsA    Match[]     @relation("MatchUserA")
+  matchesAsB    Match[]     @relation("MatchUserB")
+
+  @@index([role])
+  @@index([isAvailable])
+}
+
+// ---------- Skill ----------
+
+model Skill {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+
+  users UserSkill[]
+}
+
+// ---------- UserSkill (M2M join) ----------
+
+model UserSkill {
+  userId  Int
+  skillId Int
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skillId])
+  @@index([skillId])
+}
+
+// ---------- Swipe ----------
+// Records every swipe. Unique (fromUserId, toUserId) prevents double-swiping.
+
+model Swipe {
+  id          Int            @id @default(autoincrement())
+  fromUserId  Int
+  toUserId    Int
+  direction   SwipeDirection
+  createdAt   DateTime       @default(now())
+
+  fromUser User @relation("SwipesFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("SwipesTo",   fields: [toUserId],   references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([toUserId, direction])
+}
+
+// ---------- Match ----------
+// Created when two users LIKE each other.
+// We store (userAId, userBId) with userAId < userBId so each pair is unique.
+
+model Match {
+  id        Int      @id @default(autoincrement())
+  userAId   Int
+  userBId   Int
+  createdAt DateTime @default(now())
+
+  userA User @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
 }

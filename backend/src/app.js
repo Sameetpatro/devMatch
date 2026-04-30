@@ -26,11 +26,10 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'devmatch-backend', timestamp: new Date().toISOString() });
 });
 
-// Feature routers will be mounted here in later steps:
-// app.use('/api/auth', require('./routes/auth.routes'));
-// app.use('/api/developers', require('./routes/developer.routes'));
-// app.use('/api/swipes', require('./routes/swipe.routes'));
-// app.use('/api/matches', require('./routes/match.routes'));
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/developers', require('./routes/developer.routes'));
+app.use('/api/swipes', require('./routes/swipe.routes'));
+app.use('/api/matches', require('./routes/match.routes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);
