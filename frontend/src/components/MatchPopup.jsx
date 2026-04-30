@@ -1,4 +1,4 @@
-import { Heart, MessageCircle, X } from 'lucide-react';
+import { Handshake, Users, X } from 'lucide-react';
 
 export default function MatchPopup({ open, matchedUser, onClose }) {
   if (!open || !matchedUser) return null;
@@ -21,23 +21,24 @@ export default function MatchPopup({ open, matchedUser, onClose }) {
         </button>
 
         <div className="mx-auto h-20 w-20 rounded-full bg-brand-gradient flex items-center justify-center shadow-card">
-          <Heart size={36} className="text-white fill-white" />
+          <Handshake size={36} className="text-white" />
         </div>
 
         <h2 className="mt-4 text-2xl font-extrabold tracking-tight text-gray-900">
-          It's a match!
+          You're connected!
         </h2>
         <p className="mt-1 text-gray-600">
-          You and <span className="font-bold text-brand-600">{matchedUser.name}</span> liked each other.
+          You and <span className="font-bold text-brand-600">{matchedUser.name}</span> both want to
+          collaborate. Contact details are now unlocked.
         </p>
 
         <div className="mt-5 flex items-center gap-2 justify-center">
           <button className="btn-outline" onClick={onClose}>
-            Keep swiping
+            Keep searching
           </button>
-          <a href="/matches" className="btn-primary">
-            <MessageCircle size={16} />
-            View matches
+          <a href="/connections" className="btn-primary">
+            <Users size={16} />
+            View connections
           </a>
         </div>
       </div>

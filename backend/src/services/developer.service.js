@@ -38,8 +38,15 @@ function computeScore(candidate, referenceSkillsLower) {
   };
 }
 
+// Privacy: when listing developers in the swipe feed, hide all contact info
+// (email, phone, linkedin, github, telegram). Contact details only become
+// visible to a user once a Match exists between them.
 function toPublicDeveloper(user, scoring) {
-  const { passwordHash, skills, ...rest } = user;
+  const {
+    passwordHash, skills,
+    email, phone, linkedin, github, telegram,
+    ...rest
+  } = user;
   return {
     ...rest,
     skills: skills.map((us) => us.skill.name),

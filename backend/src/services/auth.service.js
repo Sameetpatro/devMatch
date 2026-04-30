@@ -43,7 +43,10 @@ async function attachSkillsToUser(tx, userId, skillNames) {
 }
 
 async function register(input) {
-  const { email, password, name, role, bio, experienceYears, skills } = input;
+  const {
+    email, password, name, role, bio, experienceYears, skills,
+    phone, linkedin, github, telegram,
+  } = input;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -61,6 +64,10 @@ async function register(input) {
         role,
         bio: bio ?? null,
         experienceYears: experienceYears ?? 0,
+        phone,
+        linkedin: linkedin ?? null,
+        github: github ?? null,
+        telegram: telegram ?? null,
       },
     });
 

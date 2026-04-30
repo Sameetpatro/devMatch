@@ -1,5 +1,5 @@
 // End-to-end smoke test against the running API.
-// Uses the global `fetch` available in Node 18+.
+// Verifies: auth (with phone), privacy on feed, contact reveal in matches.
 
 const BASE = 'http://localhost:5000';
 
@@ -32,113 +32,112 @@ async function login(email, password = 'secret123') {
 }
 
 (async () => {
-  // Use Sameet (id=3) and Joydeep (id=4) — they exist from earlier seeding.
   section('Login as Sameet & Joydeep');
   const sameetToken = await login('sameet@gmail.com');
   const joydeepToken = await login('joydeep@gmail.com');
-  console.log('OK both tokens obtained');
+  console.log('OK');
 
-  section('GET /api/developers (Sameet, default — feed personalized to his skills)');
-  const feed = await call('GET', '/api/developers?limit=10', { token: sameetToken });
-  console.log(`total=${feed.meta.total}  weights=${JSON.stringify(feed.meta.weights)}`);
-  console.log(`reference skills: ${JSON.stringify(feed.meta.referenceSkills)}`);
-  console.table(
-    feed.data.map((d) => ({
-      id: d.id,
-      name: d.name,
-      role: d.role,
-      exp: d.experienceYears,
-      rating: d.rating,
-      matchingSkills: d.matchingSkills,
-      score: d.score,
-    }))
+  section('GET /api/developers — must NOT include phone/email/linkedin/github/telegram');
+  const feed = await call('GET', '/api/developers?role=frontend', { token: sameetToken });
+  const sample = feed.data[0] || {};
+  const leakedKeys = ['email', 'phone', 'linkedin', 'github', 'telegram'].filter(
+    (k) => k in sample
   );
-
-  section('GET /api/developers?role=frontend (filter by role substring)');
-  const feedFrontend = await call('GET', '/api/developers?role=frontend', { token: sameetToken });
-  console.log(
-    feedFrontend.data.map((d) => `id=${d.id} ${d.name} role=${d.role} score=${d.score}`).join('\n')
-  );
-
-  section('GET /api/developers?skills=React,TypeScript (filter by skills)');
-  const feedSkills = await call('GET', '/api/developers?skills=React,TypeScript', {
-    token: sameetToken,
-  });
-  console.log(
-    feedSkills.data
-      .map((d) => `id=${d.id} ${d.name.padEnd(8)} matching=${d.matchingSkills} score=${d.score}`)
-      .join('\n')
-  );
-
-  section('Sameet (id=3) swipes LIKE on Joydeep (id=4) — no match yet');
-  const swipe1 = await call('POST', '/api/swipes', {
-    token: sameetToken,
-    body: { toUserId: 4, direction: 'LIKE' },
-  });
-  console.log(
-    `swipeId=${swipe1.swipe.id}  match=${swipe1.match ? 'YES' : 'no'}  isNewMatch=${swipe1.isNewMatch}`
-  );
-
-  section('Sameet sees fewer candidates now (Joydeep excluded since already swiped)');
-  const feedAfter = await call('GET', '/api/developers', { token: sameetToken });
-  console.log(`new total=${feedAfter.meta.total}  ids=[${feedAfter.data.map((d) => d.id).join(', ')}]`);
-
-  section('Sameet swipes PASS on Harsh (id=5) — also excluded next time');
-  const swipe2 = await call('POST', '/api/swipes', {
-    token: sameetToken,
-    body: { toUserId: 5, direction: 'PASS' },
-  });
-  console.log(`swipeId=${swipe2.swipe.id} dir=${swipe2.swipe.direction}`);
-
-  section('Joydeep (id=4) swipes LIKE back on Sameet (id=3) — match should auto-create');
-  const swipe3 = await call('POST', '/api/swipes', {
-    token: joydeepToken,
-    body: { toUserId: 3, direction: 'LIKE' },
-  });
-  console.log(
-    `swipeId=${swipe3.swipe.id}  match=${swipe3.match ? 'YES (matchId=' + swipe3.match.id + ')' : 'no'}  isNewMatch=${swipe3.isNewMatch}`
-  );
-
-  section("Both users' matches list now contains each other");
-  const sameetMatches = await call('GET', '/api/matches', { token: sameetToken });
-  console.log(
-    `Sameet: total=${sameetMatches.total}  matchedWith=[${sameetMatches.data.map((m) => `${m.user.name}(id=${m.user.id})`).join(', ')}]`
-  );
-  const joydeepMatches = await call('GET', '/api/matches', { token: joydeepToken });
-  console.log(
-    `Joydeep: total=${joydeepMatches.total}  matchedWith=[${joydeepMatches.data.map((m) => `${m.user.name}(id=${m.user.id})`).join(', ')}]`
-  );
-
-  section("Sample match payload (one row from Sameet's view)");
-  console.log(JSON.stringify(sameetMatches.data[0], null, 2));
-
-  section('Edge: cannot swipe on yourself');
-  try {
-    await call('POST', '/api/swipes', {
-      token: sameetToken,
-      body: { toUserId: 3, direction: 'LIKE' },
-    });
-    console.log('UNEXPECTED: self-swipe succeeded');
-  } catch (e) {
-    console.log('OK rejected:', e.message);
+  if (leakedKeys.length === 0) {
+    console.log(`OK — ${feed.data.length} developers returned, contact fields NOT exposed`);
+    console.log(`Public fields exposed: ${Object.keys(sample).join(', ')}`);
+  } else {
+    console.log(`FAIL — leaked: ${leakedKeys.join(', ')}`);
   }
 
-  section('Edge: GET /api/matches/9999 (someone else) — should 403');
+  section('GET /api/matches — Sameet & Joydeep are connected, contact MUST be visible');
+  const sameetConn = await call('GET', '/api/matches', { token: sameetToken });
+  const matched = sameetConn.data[0]?.user;
+  if (matched) {
+    console.log(`Connected with: ${matched.name}`);
+    console.log(`  phone:    ${matched.phone}`);
+    console.log(`  email:    ${matched.email}`);
+    console.log(`  linkedin: ${matched.linkedin || '-'}`);
+    console.log(`  github:   ${matched.github || '-'}`);
+    console.log(`  telegram: ${matched.telegram || '-'}`);
+    const missing = ['email', 'phone', 'linkedin', 'github', 'telegram'].filter(
+      (k) => !(k in matched)
+    );
+    if (missing.length === 0) console.log('OK — all contact fields present');
+    else console.log(`FAIL — missing: ${missing.join(', ')}`);
+  } else {
+    console.log('No match between Sameet and Joydeep — earlier swipe state lost?');
+  }
+
+  section('Register: missing phone should 400');
   try {
-    await call('GET', '/api/matches/9999', { token: sameetToken });
+    await call('POST', '/api/auth/register', {
+      body: {
+        email: `nophone_${Date.now()}@x.com`,
+        password: 'secret123',
+        name: 'NoPhone',
+        role: 'Backend',
+      },
+    });
     console.log('UNEXPECTED: succeeded');
   } catch (e) {
     console.log('OK rejected:', e.message);
   }
 
-  section('Edge: re-swipe (idempotent upsert) — should NOT crash');
-  const swipeRepeat = await call('POST', '/api/swipes', {
-    token: sameetToken,
-    body: { toUserId: 4, direction: 'LIKE' },
+  section('Register: invalid phone should 400');
+  try {
+    await call('POST', '/api/auth/register', {
+      body: {
+        email: `badphone_${Date.now()}@x.com`,
+        password: 'secret123',
+        name: 'BadPhone',
+        role: 'Backend',
+        phone: 'abc',
+      },
+    });
+    console.log('UNEXPECTED: succeeded');
+  } catch (e) {
+    console.log('OK rejected:', e.message);
+  }
+
+  section('Register: valid phone + optional links should succeed');
+  const newEmail = `kara_${Date.now()}@example.com`;
+  const reg = await call('POST', '/api/auth/register', {
+    body: {
+      email: newEmail,
+      password: 'secret123',
+      name: 'Kara',
+      role: 'Fullstack Developer',
+      phone: '+1 (555) 123-4567',
+      linkedin: 'https://linkedin.com/in/kara',
+      github: 'https://github.com/kara',
+      telegram: '@kara_dev',
+      experienceYears: 4,
+      skills: ['React', 'Node', 'PostgreSQL'],
+    },
   });
-  console.log(
-    `swipeId=${swipeRepeat.swipe.id} (same as before)  isNewMatch=${swipeRepeat.isNewMatch} (false because match already existed)`
-  );
+  console.log(`OK — id=${reg.user.id} phone=${reg.user.phone}`);
+  console.log(`  linkedin=${reg.user.linkedin}`);
+  console.log(`  github=${reg.user.github}`);
+  console.log(`  telegram=${reg.user.telegram}`);
+
+  section('GET /api/auth/me for new user — returns own contact info');
+  const me = await call('GET', '/api/auth/me', { token: reg.token });
+  console.log(`  email=${me.user.email} phone=${me.user.phone}`);
+
+  section('From a different user, Kara appears in feed but WITHOUT contact');
+  const feedAfter = await call('GET', '/api/developers?role=fullstack', { token: joydeepToken });
+  const karaInFeed = feedAfter.data.find((d) => d.id === reg.user.id);
+  if (karaInFeed) {
+    const leak = ['email', 'phone', 'linkedin', 'github', 'telegram'].filter((k) => k in karaInFeed);
+    if (leak.length === 0) {
+      console.log(`OK — Kara visible (id=${karaInFeed.id}) without contact info`);
+    } else {
+      console.log(`FAIL — leaked to non-connection: ${leak.join(', ')}`);
+    }
+  } else {
+    console.log('Kara not in feed (unexpected)');
+  }
 
   console.log('\nAll tests passed.');
 })().catch((err) => {

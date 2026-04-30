@@ -1,19 +1,18 @@
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
-import { Heart, LogOut, User2, Flame } from 'lucide-react';
+import { Users, LogOut, User2, Search } from 'lucide-react';
 import { useAuth } from '../lib/auth.jsx';
 import Logo from './Logo.jsx';
 
 const navItems = [
-  { to: '/', label: 'Profile', icon: User2 },
-  { to: '/swipe', label: 'Swipe', icon: Flame },
-  { to: '/matches', label: 'Matches', icon: Heart },
+  { to: '/dashboard', label: 'Profile', icon: User2 },
+  { to: '/swipe', label: 'Find devs', icon: Search },
+  { to: '/connections', label: 'Connections', icon: Users },
 ];
 
 function NavItem({ to, label, icon: Icon }) {
   return (
     <NavLink
       to={to}
-      end={to === '/'}
       className={({ isActive }) =>
         `flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-all ${
           isActive
@@ -34,14 +33,14 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-30 border-b border-pink-100 bg-white/80 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <Link to="/">
+          <Link to="/dashboard">
             <Logo />
           </Link>
 
