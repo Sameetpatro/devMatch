@@ -1,6 +1,6 @@
 # DevMatch
 
-> A Tinder-style web app for developers to find collaborators — search by role and skills, swipe through ranked candidates, and unlock contact details only when both parties agree to work together.
+> A Web app for developers to find collaborators — search by role and skills, swipe through ranked candidates, and unlock contact details only when both parties agree to work together.
 
 A full-stack project (React + Node + Postgres) built for the 6th semester FSD assignment.
 
