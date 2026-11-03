@@ -6,7 +6,7 @@
 
 @layer base {
   html, body, #root {
-    height: 100%;
+    min-height: 100%;
   }
   body {
     @apply bg-pink-gradient text-gray-900 antialiased;
@@ -17,36 +17,49 @@
 @layer components {
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-sm
-           transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2
-           disabled:opacity-50 disabled:cursor-not-allowed;
+           transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98];
   }
   .btn-primary {
-    @apply btn bg-brand-500 text-white hover:bg-brand-600 focus:ring-brand-400 shadow-soft;
+    @apply btn bg-brand-gradient text-white hover:brightness-105 focus:ring-pink-400 shadow-card hover:shadow-card-hover;
+  }
+  .btn-accent {
+    @apply btn bg-gradient-to-r from-amber-400 to-yellow-400 text-gray-900 font-bold hover:brightness-105 focus:ring-amber-300 shadow-soft;
   }
   .btn-outline {
-    @apply btn border border-brand-200 bg-white text-brand-600 hover:bg-brand-50 focus:ring-brand-300;
+    @apply btn border border-pink-200 bg-white/90 text-brand-600 hover:bg-pink-50/70 hover:border-amber-300 focus:ring-brand-300 shadow-soft;
   }
   .btn-ghost {
     @apply btn text-gray-600 hover:bg-pink-50 hover:text-brand-600;
   }
 
   .input {
-    @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm
-           placeholder:text-gray-400 focus:border-brand-400 focus:outline-none
-           focus:ring-2 focus:ring-brand-100 transition-colors;
+    @apply w-full rounded-xl border border-pink-100 bg-white/95 px-4 py-2.5 text-sm
+           placeholder:text-gray-400 focus:border-amber-400 focus:outline-none
+           focus:ring-2 focus:ring-pink-200/60 transition-colors shadow-sm;
   }
 
   .card {
-    @apply rounded-2xl bg-white shadow-card border border-pink-100;
+    @apply rounded-2xl bg-white/95 backdrop-blur-sm shadow-card border border-pink-100/80;
   }
 
   .chip {
-    @apply inline-flex items-center rounded-full bg-brand-50 text-brand-600 text-xs font-medium
-           px-2.5 py-1 border border-brand-100;
+    @apply inline-flex items-center rounded-full bg-brand-50 text-brand-700 text-xs font-semibold
+           px-2.5 py-1 border border-pink-200/70 shadow-sm transition-all;
+  }
+
+  .chip-yellow {
+    @apply inline-flex items-center rounded-full bg-amber-50 text-amber-800 text-xs font-semibold
+           px-2.5 py-1 border border-amber-200 shadow-sm transition-all;
+  }
+
+  .chip-gradient {
+    @apply inline-flex items-center rounded-full bg-gradient-to-r from-pink-50 via-rose-50 to-amber-50 text-gray-800 text-xs font-semibold
+           px-2.5 py-1 border border-pink-200/70 shadow-sm;
   }
 
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1.5;
+    @apply block text-sm font-semibold text-gray-700 mb-1.5;
   }
 }
 

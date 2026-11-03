@@ -4,32 +4,48 @@ export default {
   theme: {
     extend: {
       colors: {
-        // DevMatch palette — soft pink + white system
+        // DevMatch Pink + Yellow system
         brand: {
-          50: '#fff5f7',
-          100: '#ffe4ec',
-          200: '#fbcfe0',
-          300: '#f9a8c4',
-          400: '#f472a6',
-          500: '#ec4899', // primary pink
+          50: '#fff5f8',
+          100: '#ffe4ed',
+          200: '#fbcfe2',
+          300: '#f9a8cb',
+          400: '#f472ab',
+          500: '#ec4899', // primary vivid pink
           600: '#db2777',
           700: '#be185d',
+        },
+        sun: {
+          50: '#fefce8',
+          100: '#fef9c3',
+          200: '#fef08a',
+          300: '#fde047',
+          400: '#facc15', // electric sunny yellow
+          500: '#eab308', // rich golden yellow
+          600: '#ca8a04',
+          700: '#a16207',
         },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        card: '0 6px 24px rgba(236, 72, 153, 0.12)',
-        soft: '0 2px 8px rgba(0, 0, 0, 0.04)',
+        card: '0 10px 30px -5px rgba(236, 72, 153, 0.12), 0 4px 12px -2px rgba(245, 158, 11, 0.12)',
+        'card-hover': '0 20px 35px -5px rgba(236, 72, 153, 0.18), 0 10px 18px -3px rgba(245, 158, 11, 0.16)',
+        soft: '0 2px 10px rgba(234, 179, 8, 0.08)',
+        glow: '0 0 25px rgba(250, 204, 21, 0.4)',
+        'pink-glow': '0 0 25px rgba(236, 72, 153, 0.35)',
       },
       backgroundImage: {
-        'pink-gradient': 'linear-gradient(135deg, #fff5f7 0%, #ffe4ec 100%)',
-        'brand-gradient': 'linear-gradient(135deg, #f472a6 0%, #ec4899 100%)',
+        'pink-gradient': 'linear-gradient(135deg, #fff5f8 0%, #fffbeb 50%, #fef9c3 100%)',
+        'brand-gradient': 'linear-gradient(135deg, #ec4899 0%, #f43f5e 45%, #f59e0b 100%)',
+        'sun-gradient': 'linear-gradient(135deg, #fde047 0%, #f59e0b 100%)',
+        'pink-yellow-subtle': 'linear-gradient(135deg, #fff1f2 0%, #fefce8 100%)',
       },
       animation: {
         'fade-in': 'fadeIn 0.25s ease-out',
-        'pop': 'pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        pop: 'pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        pulse_slow: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       },
       keyframes: {
         fadeIn: {

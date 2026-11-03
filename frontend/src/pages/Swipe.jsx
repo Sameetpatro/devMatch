@@ -41,14 +41,14 @@ function SearchHero({ initial, onSearch }) {
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-14 animate-fade-in">
       <div className="text-center mb-8">
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
-          Find your <span className="text-brand-500">collaborator</span>
+          Find your <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500">collaborator</span>
         </h1>
         <p className="mt-2 text-gray-500">
           What kind of developer do you need? Search by role or skills to start.
         </p>
       </div>
 
-      <form onSubmit={submit} className="card p-6 sm:p-7 space-y-5">
+      <form onSubmit={submit} className="card p-6 sm:p-7 space-y-5 border-pink-100 hover:border-amber-200 transition-colors">
         <div>
           <label className="label">Role</label>
           <div className="relative">
@@ -61,16 +61,16 @@ function SearchHero({ initial, onSearch }) {
               onChange={(e) => setRole(e.target.value)}
             />
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
             {ROLE_QUICK_PICKS.map((r) => (
               <button
                 type="button"
                 key={r}
                 onClick={() => setRole(r)}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                className={`text-xs px-3 py-1 rounded-full border transition-all ${
                   role === r
-                    ? 'bg-brand-500 text-white border-brand-500'
-                    : 'bg-white text-gray-600 border-pink-100 hover:border-brand-300 hover:text-brand-600'
+                    ? 'bg-gradient-to-r from-pink-500 to-amber-500 text-white font-bold border-transparent shadow-sm'
+                    : 'bg-white text-gray-700 border-pink-100 hover:border-amber-300 hover:bg-amber-50/50 hover:text-pink-600'
                 }`}
               >
                 {r}
@@ -87,7 +87,7 @@ function SearchHero({ initial, onSearch }) {
             value={skills}
             onChange={(e) => setSkills(e.target.value)}
           />
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
             {POPULAR_SKILLS.map((s) => {
               const active = skills.split(',').map((x) => x.trim().toLowerCase()).includes(s.toLowerCase());
               return (
@@ -102,10 +102,10 @@ function SearchHero({ initial, onSearch }) {
                       setSkills([...list, s].join(', '));
                     }
                   }}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  className={`text-xs px-3 py-1 rounded-full border transition-all ${
                     active
-                      ? 'bg-brand-500 text-white border-brand-500'
-                      : 'bg-white text-gray-600 border-pink-100 hover:border-brand-300 hover:text-brand-600'
+                      ? 'bg-amber-400 text-gray-950 font-bold border-amber-400 shadow-sm'
+                      : 'bg-white text-gray-700 border-pink-100 hover:border-pink-300 hover:bg-pink-50/50 hover:text-pink-600'
                   }`}
                 >
                   {s}
@@ -126,8 +126,8 @@ function SearchHero({ initial, onSearch }) {
 
 function SearchSummary({ active, onChange }) {
   const chips = [];
-  if (active.role) chips.push({ label: `Role: ${active.role}`, key: 'role' });
-  if (active.skills) chips.push({ label: `Skills: ${active.skills}`, key: 'skills' });
+  if (active.role) chips.push({ label: `Role: ${active.role}`, key: 'role', isYellow: false });
+  if (active.skills) chips.push({ label: `Skills: ${active.skills}`, key: 'skills', isYellow: true });
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -136,7 +136,7 @@ function SearchSummary({ active, onChange }) {
         New search
       </button>
       {chips.map((c) => (
-        <span key={c.key} className="chip">
+        <span key={c.key} className={c.isYellow ? 'chip-yellow' : 'chip'}>
           <Filter size={11} className="mr-1" />
           {c.label}
         </span>
@@ -216,10 +216,9 @@ export default function Swipe() {
       <SearchSummary active={searchState} onChange={() => setSearchState(null)} />
 
       {meta && meta.referenceSkills?.length > 0 && (
-        <div className="text-xs text-gray-500 flex items-center gap-1.5">
-          <Sparkles size={12} className="text-brand-400" />
-          Ranked by match against:{' '}
-          <span className="font-semibold text-gray-700">{meta.referenceSkills.join(', ')}</span>
+        <div className="text-xs text-gray-500 flex items-center gap-1.5 bg-amber-50/60 px-3 py-1.5 rounded-xl border border-amber-200/50 w-fit">
+          <Sparkles size={13} className="text-amber-500 fill-amber-400" />
+          <span>Ranked by match against: <span className="font-semibold text-gray-800">{meta.referenceSkills.join(', ')}</span></span>
         </div>
       )}
 
@@ -231,9 +230,9 @@ export default function Swipe() {
         )}
 
         {!loading && developers.length === 0 && (
-          <div className="card p-8 max-w-md text-center animate-fade-in">
-            <div className="mx-auto h-16 w-16 rounded-2xl bg-brand-50 flex items-center justify-center">
-              <Handshake size={28} className="text-brand-400" />
+          <div className="card p-8 max-w-md text-center animate-fade-in border-amber-200">
+            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-50 to-amber-50 flex items-center justify-center border border-pink-100 shadow-soft">
+              <Handshake size={28} className="text-pink-500" />
             </div>
             <h3 className="mt-4 text-lg font-bold text-gray-900">No more developers</h3>
             <p className="mt-1 text-sm text-gray-500">
@@ -286,7 +285,7 @@ export default function Swipe() {
         <div className="flex items-center justify-center gap-4 sm:gap-6">
           <button
             onClick={() => swipeFromButton('left')}
-            className="flex items-center gap-2 px-5 h-14 rounded-full bg-white border-2 border-gray-200 text-gray-600 hover:border-gray-300 hover:scale-[1.02] transition-all shadow-soft font-semibold"
+            className="flex items-center gap-2 px-6 h-14 rounded-full bg-white border-2 border-gray-200 text-gray-700 hover:border-pink-300 hover:text-pink-600 hover:scale-[1.02] transition-all shadow-soft font-semibold"
             aria-label="Skip"
           >
             <X size={20} />
@@ -294,10 +293,10 @@ export default function Swipe() {
           </button>
           <button
             onClick={() => swipeFromButton('right')}
-            className="flex items-center gap-2 px-6 h-16 rounded-full bg-brand-gradient text-white hover:scale-[1.02] transition-all shadow-card font-semibold"
+            className="flex items-center gap-2.5 px-7 h-16 rounded-full bg-brand-gradient text-white hover:scale-[1.03] hover:shadow-glow transition-all shadow-card font-bold text-base"
             aria-label="Ask to collaborate"
           >
-            <Handshake size={22} />
+            <Handshake size={22} className="text-amber-200" />
             Ask to collaborate
           </button>
         </div>

@@ -2,7 +2,7 @@ const { z } = require('zod');
 
 const createRoleSchema = z.object({
   title: z.string().min(2, 'Title must be at least 2 characters').max(100),
-  companyName: z.string().min(1, 'Company name is required').max(100),
+  companyName: z.string().max(100).optional().default('Personal Project'),
   description: z.string().min(10, 'Description must be at least 10 characters'),
   location: z.string().max(100).optional(),
   isRemote: z.boolean().optional().default(true),

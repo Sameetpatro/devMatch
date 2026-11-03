@@ -1,13 +1,19 @@
 require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 
-// Singleton Prisma client — prevents exhausting DB connections during
-// hot-reload in development.
+// Auto-sanitize connection string:
+// If connecting to Neon with -pooler, switch to direct host to avoid PgBouncer idle socket terminations
+let dbUrl = process.env.DATABASE_URL;
+if (dbUrl && dbUrl.includes('-pooler.')) {
+  dbUrl = dbUrl.replace('-pooler.', '.');
+}
+
 const globalForPrisma = globalThis;
 
 const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
+    datasources: dbUrl ? { db: { url: dbUrl } } : undefined,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
 

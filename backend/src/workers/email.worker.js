@@ -52,6 +52,8 @@ async function processEmailJob(payload) {
     textBody += `Candidate ${data.candidateName} has applied for role "${data.roleTitle}". Check candidate deck in your dashboard.`;
   } else if (template === 'MATCH_ALERT') {
     textBody += `Great news! You have a new connection with ${data.partnerName} for "${data.roleTitle}". Open chat to start collaborating!`;
+  } else if (template === 'APPLICATION_STATUS') {
+    textBody += `Your application for "${data.roleTitle}" at ${data.companyName} was not selected. Keep exploring and applying to other roles on DevMatch!`;
   } else {
     textBody += JSON.stringify(data, null, 2);
   }

@@ -10,8 +10,8 @@ import { GithubIcon, LinkedinIcon } from '../components/icons.jsx';
 
 function StatCard({ icon: Icon, label, value, accent }) {
   return (
-    <div className="card p-5 flex items-center gap-4">
-      <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${accent}`}>
+    <div className="card p-5 flex items-center gap-4 border-pink-100 hover:border-amber-200 transition-colors">
+      <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm ${accent}`}>
         <Icon size={22} className="text-white" />
       </div>
       <div>
@@ -25,8 +25,8 @@ function StatCard({ icon: Icon, label, value, accent }) {
 function ContactPill({ icon: Icon, label, value }) {
   if (!value) return null;
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-pink-50 px-3 py-2 border border-pink-100 text-sm">
-      <Icon size={14} className="text-brand-500 shrink-0" />
+    <div className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-50/80 to-amber-50/80 px-3.5 py-2 border border-pink-100 text-sm">
+      <Icon size={14} className="text-pink-500 shrink-0" />
       <span className="text-gray-500 shrink-0">{label}:</span>
       <span className="font-semibold text-gray-900 truncate">{value}</span>
     </div>
@@ -51,15 +51,15 @@ export default function Dashboard() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8 animate-fade-in">
       {/* Hero */}
-      <div className="card overflow-hidden">
+      <div className="card overflow-hidden border-pink-100">
         <div className="h-24 sm:h-28 bg-brand-gradient relative">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.4),transparent_60%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.45),transparent_60%)]" />
         </div>
 
         <div className="px-6 sm:px-8 pb-6">
           {/* Avatar overlaps banner; "Find devs" button sits on the right */}
           <div className="flex items-end justify-between gap-3 -mt-10 mb-4">
-            <div className="h-20 w-20 rounded-2xl bg-brand-gradient text-white shadow-card flex items-center justify-center text-3xl font-extrabold border-4 border-white shrink-0">
+            <div className="h-20 w-20 rounded-2xl bg-white shadow-card flex items-center justify-center text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-br from-pink-500 to-amber-500 border-4 border-white shrink-0">
               {user?.name?.[0]?.toUpperCase()}
             </div>
             <Link to="/swipe" className="btn-primary mb-1">
@@ -73,7 +73,7 @@ export default function Dashboard() {
               {user?.name}
             </h1>
             <p className="text-sm text-gray-500 flex items-center gap-1.5 mt-1">
-              <Briefcase size={14} />
+              <Briefcase size={14} className="text-amber-600" />
               {user?.role}
               <span className="mx-2 text-gray-300">•</span>
               {user?.experienceYears} yr{user?.experienceYears === 1 ? '' : 's'} exp
@@ -84,8 +84,8 @@ export default function Dashboard() {
 
           {skillsList.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-1.5">
-              {skillsList.map((s) => (
-                <span key={s} className="chip">
+              {skillsList.map((s, idx) => (
+                <span key={s} className={idx % 2 === 0 ? 'chip' : 'chip-yellow'}>
                   {s}
                 </span>
               ))}
@@ -96,10 +96,10 @@ export default function Dashboard() {
 
       {/* Your contact (only visible to you and your connections) */}
       {user && (
-        <div className="card p-6">
+        <div className="card p-6 border-pink-100">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-lg font-bold text-gray-900">Your contact</h2>
-            <span className="chip">Visible to your connections only</span>
+            <span className="chip-gradient">Visible to your connections only</span>
           </div>
           <p className="text-xs text-gray-500 mb-4">
             These details are unlocked once another developer also asks to collaborate with you.
@@ -126,21 +126,21 @@ export default function Dashboard() {
           icon={Star}
           label="Your rating"
           value={Number(user?.rating ?? 0).toFixed(1)}
-          accent="bg-rose-400"
+          accent="bg-gradient-to-r from-amber-400 to-yellow-500 text-gray-950"
         />
         <StatCard
           icon={Sparkles}
           label="Skills"
           value={skillsList.length}
-          accent="bg-pink-400"
+          accent="bg-gradient-to-r from-pink-500 to-rose-400"
         />
       </div>
 
       {/* Recent connections */}
-      <div className="card p-6">
+      <div className="card p-6 border-pink-100">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">Recent connections</h2>
-          <Link to="/connections" className="text-sm font-semibold text-brand-600 hover:underline">
+          <Link to="/connections" className="text-sm font-semibold text-pink-600 hover:text-amber-600 transition-colors">
             View all →
           </Link>
         </div>
@@ -150,7 +150,7 @@ export default function Dashboard() {
           </div>
         ) : connections.total === 0 ? (
           <div className="py-10 text-center">
-            <Users className="mx-auto text-brand-300" size={36} />
+            <Users className="mx-auto text-pink-300" size={36} />
             <p className="mt-2 text-gray-500">No connections yet — start searching!</p>
             <Link to="/swipe" className="btn-primary mt-4 inline-flex">
               <Search size={16} />
@@ -162,9 +162,9 @@ export default function Dashboard() {
             {connections.data.slice(0, 4).map((c) => (
               <div
                 key={c.matchId}
-                className="flex items-center gap-3 p-3 rounded-xl border border-pink-100 hover:bg-pink-50 transition-colors"
+                className="flex items-center gap-3 p-3 rounded-xl border border-pink-100 hover:border-amber-200 hover:bg-gradient-to-r hover:from-pink-50/50 hover:to-amber-50/50 transition-all"
               >
-                <div className="h-10 w-10 rounded-xl bg-brand-gradient text-white font-bold flex items-center justify-center">
+                <div className="h-10 w-10 rounded-xl bg-brand-gradient text-white font-bold flex items-center justify-center shadow-sm">
                   {c.user.name?.[0]?.toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">

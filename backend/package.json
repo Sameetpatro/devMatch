@@ -12,7 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "node prisma/seed.js",
+    "db:seed": "node prisma/seed_devmatch.js",
     "test:concurrency": "node scripts/reproduce-race-condition.js",
     "test": "jest --runInBand --forceExit"
   },

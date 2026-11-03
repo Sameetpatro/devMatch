@@ -18,8 +18,11 @@ export default function Login() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await login(email, password);
-      const dest = location.state?.from?.pathname || '/swipe';
+      const user = await login(email, password);
+      let dest = location.state?.from?.pathname;
+      if (!dest || dest === '/' || dest === '/swipe') {
+        dest = user.userType === 'RECRUITER' ? '/recruiter' : '/roles';
+      }
       toast.success('Welcome back!');
       navigate(dest, { replace: true });
     } catch (err) {
@@ -88,7 +91,7 @@ export default function Login() {
 
           <p className="mt-6 text-center text-sm text-gray-600">
             New here?{' '}
-            <Link to="/register" className="font-semibold text-brand-600 hover:underline">
+            <Link to="/register" className="font-semibold text-pink-600 hover:text-amber-600 transition-colors hover:underline">
               Create an account
             </Link>
           </p>

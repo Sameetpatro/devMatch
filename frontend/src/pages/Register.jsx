@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Mail, Lock, User2, Briefcase, Code2, Phone, Send,
+  Mail, Lock, User2, Briefcase, Code2, Phone, Send, Building2, Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../lib/auth.jsx';
@@ -13,6 +13,8 @@ export default function Register() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
+    userType: 'DEVELOPER', // 'DEVELOPER' | 'RECRUITER'
+    companyName: '',
     email: '',
     password: '',
     name: '',
@@ -38,7 +40,9 @@ export default function Register() {
         .map((s) => s.trim())
         .filter(Boolean);
 
-      await register({
+      const user = await register({
+        userType: form.userType,
+        companyName: form.companyName || undefined,
         email: form.email,
         password: form.password,
         name: form.name,
@@ -51,8 +55,13 @@ export default function Register() {
         github: form.github || undefined,
         telegram: form.telegram || undefined,
       });
+
       toast.success('Account created!');
-      navigate('/swipe', { replace: true });
+      if (user.userType === 'RECRUITER') {
+        navigate('/recruiter', { replace: true });
+      } else {
+        navigate('/roles', { replace: true });
+      }
     } catch (err) {
       toast.error(err.displayMessage || 'Registration failed');
     } finally {
@@ -67,21 +76,47 @@ export default function Register() {
           <Logo size="lg" />
         </div>
 
-        <div className="card p-7 sm:p-8 animate-fade-in">
-          <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Create account</h1>
+        <div className="card p-7 sm:p-8 animate-fade-in border-pink-100">
+          <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Create your account</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Tell us a bit about you so we can find your perfect collaborator.
+            Join the platform to discover roles, publish jobs, and connect directly.
           </p>
+
+          {/* Account Type Selector */}
+          <div className="mt-6 p-1.5 bg-pink-50/60 rounded-2xl border border-pink-100 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, userType: 'DEVELOPER' })}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                form.userType === 'DEVELOPER'
+                  ? 'bg-white text-pink-600 shadow-sm border border-pink-200/80'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              👨‍💻 I am a Developer
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, userType: 'RECRUITER' })}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                form.userType === 'RECRUITER'
+                  ? 'bg-white text-pink-600 shadow-sm border border-pink-200/80'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              🏢 I am a Recruiter / Founder
+            </button>
+          </div>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-6">
             {/* --- Basic info --- */}
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-brand-600 mb-3">
-                Basic info
+              <h2 className="text-xs font-bold uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-amber-600 mb-3">
+                {form.userType === 'RECRUITER' ? 'Recruiter Profile' : 'Developer Profile'}
               </h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <label className="label">Email</label>
+                  <label className="label">Email *</label>
                   <div className="relative">
                     <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -96,7 +131,7 @@ export default function Register() {
                 </div>
 
                 <div>
-                  <label className="label">Password</label>
+                  <label className="label">Password *</label>
                   <div className="relative">
                     <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -112,27 +147,49 @@ export default function Register() {
                 </div>
 
                 <div>
-                  <label className="label">Name</label>
+                  <label className="label">Full Name *</label>
                   <div className="relative">
                     <User2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       required
                       className="input pl-9"
-                      placeholder="Your name"
+                      placeholder="Your full name"
                       value={form.name}
                       onChange={update('name')}
                     />
                   </div>
                 </div>
 
+                {form.userType === 'RECRUITER' && (
+                  <div className="sm:col-span-2">
+                    <label className="label">Company / Organization *</label>
+                    <div className="relative">
+                      <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        required
+                        className="input pl-9"
+                        placeholder="e.g. Acme Tech Labs"
+                        value={form.companyName}
+                        onChange={update('companyName')}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
-                  <label className="label">Role</label>
+                  <label className="label">
+                    {form.userType === 'RECRUITER' ? 'Headline / Role *' : 'Role / Title *'}
+                  </label>
                   <div className="relative">
                     <Briefcase size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       required
                       className="input pl-9"
-                      placeholder="Frontend Developer, Android Dev..."
+                      placeholder={
+                        form.userType === 'RECRUITER'
+                          ? 'e.g. Technical Talent Partner'
+                          : 'e.g. Fullstack Engineer'
+                      }
                       value={form.role}
                       onChange={update('role')}
                     />
@@ -143,32 +200,39 @@ export default function Register() {
                   <label className="label">Years of experience</label>
                   <input
                     type="number"
-                    min={0}
-                    max={60}
+                    min="0"
+                    max="50"
                     className="input"
                     value={form.experienceYears}
                     onChange={update('experienceYears')}
                   />
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="label">Skills (comma separated)</label>
-                  <div className="relative">
-                    <Code2 size={16} className="absolute left-3 top-3 text-gray-400" />
-                    <input
-                      className="input pl-9"
-                      placeholder="React, Node, TypeScript"
-                      value={form.skills}
-                      onChange={update('skills')}
-                    />
+                {form.userType === 'DEVELOPER' && (
+                  <div className="sm:col-span-2">
+                    <label className="label">Skills (comma separated)</label>
+                    <div className="relative">
+                      <Code2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        className="input pl-9"
+                        placeholder="React, Node.js, PostgreSQL, Redis"
+                        value={form.skills}
+                        onChange={update('skills')}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="sm:col-span-2">
-                  <label className="label">Bio</label>
+                  <label className="label">Bio / Summary</label>
                   <textarea
+                    rows={3}
                     className="input min-h-[88px] resize-none"
-                    placeholder="Tell us what kind of project you're looking to build..."
+                    placeholder={
+                      form.userType === 'RECRUITER'
+                        ? 'Tell candidates about your company mission and engineering culture...'
+                        : "Tell recruiters what you're passionate about building..."
+                    }
                     value={form.bio}
                     onChange={update('bio')}
                   />
@@ -176,26 +240,23 @@ export default function Register() {
               </div>
             </div>
 
-            {/* --- Contact --- */}
+            {/* --- Contact Info --- */}
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-brand-600 mb-1">
-                Contact
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">
-                Only visible to people you've connected with. Phone is required so collaborators can
-                reach you.
-              </p>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-amber-600">
+                  Contact Details
+                </h2>
+                <span className="text-xs text-gray-400">Unlocked only upon mutual match</span>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="label">
-                    Phone <span className="text-brand-500">*</span>
-                  </label>
+                  <label className="label">Phone number *</label>
                   <div className="relative">
                     <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       required
                       className="input pl-9"
-                      placeholder="+91 98765 43210"
+                      placeholder="+1 555 123 4567"
                       value={form.phone}
                       onChange={update('phone')}
                     />
@@ -203,12 +264,12 @@ export default function Register() {
                 </div>
 
                 <div>
-                  <label className="label">Telegram</label>
+                  <label className="label">Telegram handle</label>
                   <div className="relative">
                     <Send size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       className="input pl-9"
-                      placeholder="@yourhandle"
+                      placeholder="@username"
                       value={form.telegram}
                       onChange={update('telegram')}
                     />
@@ -216,13 +277,13 @@ export default function Register() {
                 </div>
 
                 <div>
-                  <label className="label">LinkedIn</label>
+                  <label className="label">LinkedIn URL</label>
                   <div className="relative">
                     <LinkedinIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       type="url"
                       className="input pl-9"
-                      placeholder="https://linkedin.com/in/your-handle"
+                      placeholder="https://linkedin.com/in/..."
                       value={form.linkedin}
                       onChange={update('linkedin')}
                     />
@@ -230,13 +291,13 @@ export default function Register() {
                 </div>
 
                 <div>
-                  <label className="label">GitHub</label>
+                  <label className="label">GitHub URL</label>
                   <div className="relative">
                     <GithubIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       type="url"
                       className="input pl-9"
-                      placeholder="https://github.com/your-handle"
+                      placeholder="https://github.com/..."
                       value={form.github}
                       onChange={update('github')}
                     />
@@ -245,14 +306,14 @@ export default function Register() {
               </div>
             </div>
 
-            <button type="submit" disabled={submitting} className="btn-primary w-full">
-              {submitting ? 'Creating account…' : 'Create account'}
+            <button type="submit" disabled={submitting} className="btn-primary w-full py-3 text-base">
+              {submitting ? 'Creating profile...' : 'Create Account'}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-gray-600">
+          <p className="mt-6 text-center text-sm text-gray-500">
             Already have an account?{' '}
-            <Link to="/login" className="font-semibold text-brand-600 hover:underline">
+            <Link to="/login" className="font-semibold text-pink-600 hover:text-pink-500">
               Sign in
             </Link>
           </p>

@@ -6,4 +6,14 @@ const create = asyncHandler(async (req, res) => {
   res.status(201).json(result);
 });
 
-module.exports = { create };
+const getSentRequests = asyncHandler(async (req, res) => {
+  const requests = await swipeService.getSentRequests(req.user.id);
+  res.json({ status: 'ok', data: requests });
+});
+
+const getReceivedRequests = asyncHandler(async (req, res) => {
+  const requests = await swipeService.getReceivedRequests(req.user.id);
+  res.json({ status: 'ok', data: requests });
+});
+
+module.exports = { create, getSentRequests, getReceivedRequests };

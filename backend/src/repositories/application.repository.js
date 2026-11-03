@@ -19,13 +19,12 @@ class ApplicationRepository {
         coverLetter: coverLetter || undefined,
         status: 'PENDING',
       },
-      include: {
-        jobRole: {
-          include: { recruiter: { select: { id: true, name: true, companyName: true } } },
-        },
-        developer: {
-          select: { id: true, name: true, role: true, experienceYears: true, rating: true },
-        },
+      select: {
+        id: true,
+        jobRoleId: true,
+        developerId: true,
+        status: true,
+        createdAt: true,
       },
     });
   }

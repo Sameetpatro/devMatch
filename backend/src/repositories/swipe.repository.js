@@ -36,6 +36,56 @@ class SwipeRepository {
     });
     return swipes.map((s) => s.toUserId);
   }
+
+  async getSentSwipes(fromUserId) {
+    return prisma.swipe.findMany({
+      where: {
+        fromUserId: Number(fromUserId),
+        direction: 'LIKE',
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        toUser: {
+          select: {
+            id: true,
+            name: true,
+            role: true,
+            bio: true,
+            companyName: true,
+            userType: true,
+            experienceYears: true,
+            rating: true,
+            skills: { include: { skill: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async getReceivedSwipes(toUserId) {
+    return prisma.swipe.findMany({
+      where: {
+        toUserId: Number(toUserId),
+        direction: 'LIKE',
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        fromUser: {
+          select: {
+            id: true,
+            name: true,
+            role: true,
+            bio: true,
+            companyName: true,
+            userType: true,
+            experienceYears: true,
+            rating: true,
+            skills: { include: { skill: true } },
+          },
+        },
+      },
+    });
+  }
 }
 
 module.exports = new SwipeRepository();

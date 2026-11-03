@@ -60,13 +60,6 @@ class RoleRepository {
         recruiter: {
           select: { id: true, name: true, email: true, companyName: true, phone: true },
         },
-        applications: {
-          include: {
-            developer: {
-              include: { skills: { include: { skill: true } } },
-            },
-          },
-        },
       },
     });
   }

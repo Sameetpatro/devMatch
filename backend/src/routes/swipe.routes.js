@@ -8,5 +8,7 @@ const controller = require('../controllers/swipe.controller');
 const router = Router();
 
 router.post('/', requireAuth, actionLimiter, validate(swipeBody), controller.create);
+router.get('/sent', requireAuth, controller.getSentRequests);
+router.get('/received', requireAuth, controller.getReceivedRequests);
 
 module.exports = router;

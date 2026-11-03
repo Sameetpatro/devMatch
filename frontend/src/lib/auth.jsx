@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import api, { tokenStore } from './api';
+import { disconnectSocket } from './socket';
 
 const AuthContext = createContext(null);
 
@@ -14,7 +15,7 @@ export function AuthProvider({ children }) {
       return;
     }
     try {
-      const { data } = await api.get('/api/auth/me');
+      const { data } = await api.get('/auth/me');
       setUser(data.user);
     } catch {
       // Invalid/expired token — clear it.
@@ -30,20 +31,21 @@ export function AuthProvider({ children }) {
   }, [refresh]);
 
   const login = async (email, password) => {
-    const { data } = await api.post('/api/auth/login', { email, password });
+    const { data } = await api.post('/auth/login', { email, password });
     tokenStore.set(data.token);
     setUser(data.user);
     return data.user;
   };
 
   const register = async (payload) => {
-    const { data } = await api.post('/api/auth/register', payload);
+    const { data } = await api.post('/auth/register', payload);
     tokenStore.set(data.token);
     setUser(data.user);
     return data.user;
   };
 
   const logout = () => {
+    disconnectSocket();
     tokenStore.clear();
     setUser(null);
   };

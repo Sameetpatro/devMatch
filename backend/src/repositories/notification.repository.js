@@ -2,9 +2,30 @@ const prisma = require('../config/prisma');
 
 class NotificationRepository {
   async create({ userId, type, title, body, data = null }) {
+    const uId = Number(userId);
+
+    // Deduplication safeguard: if an identical notification was created within 30 seconds, reuse it
+    try {
+      const recent = await prisma.notification.findFirst({
+        where: {
+          userId: uId,
+          type,
+          title,
+          createdAt: {
+            gte: new Date(Date.now() - 30 * 1000),
+          },
+        },
+      });
+      if (recent) {
+        return recent;
+      }
+    } catch (err) {
+      // If check fails for any reason, proceed to create
+    }
+
     return prisma.notification.create({
       data: {
-        userId: Number(userId),
+        userId: uId,
         type,
         title,
         body,

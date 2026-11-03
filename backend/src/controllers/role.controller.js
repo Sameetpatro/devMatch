@@ -46,6 +46,11 @@ const getPersonalizedRoleFeed = asyncHandler(async (req, res) => {
   res.json({ status: 'ok', ...feed });
 });
 
+const getMyApplications = asyncHandler(async (req, res) => {
+  const applications = await roleService.getDeveloperApplications(req.user.id);
+  res.json({ status: 'ok', data: applications });
+});
+
 module.exports = {
   publishRole,
   getMyRoles,
@@ -55,5 +60,6 @@ module.exports = {
   applyToRole,
   decideApplication,
   getPersonalizedRoleFeed,
+  getMyApplications,
 };
 

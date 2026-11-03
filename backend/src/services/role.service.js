@@ -2,6 +2,8 @@ const roleRepository = require('../repositories/role.repository');
 const applicationRepository = require('../repositories/application.repository');
 const matchRepository = require('../repositories/match.repository');
 const userRepository = require('../repositories/user.repository');
+const notificationRepository = require('../repositories/notification.repository');
+const { getIO } = require('../sockets/chat.socket');
 const cacheService = require('./cache.service');
 const queuePublisher = require('../queues/publisher');
 const prisma = require('../config/prisma');
@@ -76,9 +78,17 @@ class RoleService {
         const { passwordHash, phone, email, linkedin, github, telegram, ...safeDev } =
           app.developer;
 
+        const TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+        const elapsedMs = Date.now() - new Date(app.createdAt).getTime();
+        const isExpired = app.status === 'PENDING' && elapsedMs > TTL_MS;
+        const remainingHours = Math.max(0, Math.ceil((TTL_MS - elapsedMs) / (1000 * 60 * 60)));
+
         return {
           applicationId: app.id,
-          status: app.status,
+          status: isExpired ? 'EXPIRED' : app.status,
+          rawStatus: app.status,
+          isExpired,
+          remainingHours,
           appliedAt: app.createdAt,
           coverLetter: app.coverLetter,
           developer: {
@@ -109,16 +119,34 @@ class RoleService {
     // Idempotent upsert via application repository
     const application = await applicationRepository.apply(rId, devId, coverLetter);
 
-    // Invalidate developer feed so applied role disappears from their deck
-    await cacheService.invalidateUserFeed(devId);
+    // Invalidate developer feed asynchronously so it doesn't block response
+    cacheService
+      .invalidateUserFeed(devId)
+      .catch((err) => console.warn(`[Cache] invalidate error: ${err.message}`));
 
-    // Asynchronously dispatch notification & email to recruiter without blocking HTTP response
+    // Directly persist notification to Recruiter in PostgreSQL
+    const applicantName = application.developer?.name || 'A candidate';
+    const appNotif = await notificationRepository.create({
+      userId: role.recruiterId,
+      type: 'APPLICATION',
+      title: 'New Applicant Received',
+      body: `${applicantName} applied to your role "${role.title}".`,
+      data: { jobRoleId: rId, developerId: devId, applicationId: application.id },
+    });
+
+    const io = getIO();
+    if (io) {
+      console.log(`[Socket] Direct real-time application notification sent to user_${role.recruiterId}`);
+      io.to(`user_${role.recruiterId}`).emit('new_notification', appNotif);
+    }
+
+    // Asynchronously dispatch notification & email to recruiter for queue audit
     queuePublisher
       .publishNotification({
         userId: role.recruiterId,
         type: 'APPLICATION',
         title: 'New Applicant Received',
-        body: `A candidate has applied to your role "${role.title}".`,
+        body: `${applicantName} applied to your role "${role.title}".`,
         data: { jobRoleId: rId, developerId: devId, applicationId: application.id },
       })
       .catch((err) => console.warn(`[NotificationQueue] publish failed: ${err.message}`));
@@ -193,8 +221,36 @@ class RoleService {
       timeout: 30000,
     });
 
-    // Asynchronously dispatch match notifications via RabbitMQ
+    const io = getIO();
+
     if (decision === 'ACCEPTED') {
+      // 1. Directly persist notification to Developer in PostgreSQL
+      const devNotif = await notificationRepository.create({
+        userId: app.developerId,
+        type: 'MATCH',
+        title: "It's a Connection!",
+        body: `Your application for "${role.title}" was accepted! Start chatting now.`,
+        data: { matchId: result.match?.id, jobRoleId: rId, partnerId: recId, partnerName: role.recruiter?.name || 'Recruiter' },
+      });
+
+      // 2. Directly persist notification to Recruiter in PostgreSQL
+      const recNotif = await notificationRepository.create({
+        userId: recId,
+        type: 'MATCH',
+        title: 'Application Accepted',
+        body: `You accepted ${app.developer?.name || 'the candidate'} for "${role.title}"! You can now chat.`,
+        data: { matchId: result.match?.id, jobRoleId: rId, developerId: app.developerId, partnerName: app.developer?.name },
+      });
+
+      // Emit real-time WebSocket events to both connected clients
+      if (io) {
+        io.to(`user_${app.developerId}`).emit('new_notification', devNotif);
+        io.to(`user_${recId}`).emit('new_notification', recNotif);
+        io.to(`user_${app.developerId}`).emit('new_match', { matchId: result.match?.id, jobRoleId: rId });
+        io.to(`user_${recId}`).emit('new_match', { matchId: result.match?.id, jobRoleId: rId });
+      }
+
+      // Also queue for async background logging/email
       queuePublisher
         .publishNotification({
           userId: app.developerId,
@@ -202,6 +258,16 @@ class RoleService {
           title: "It's a Connection!",
           body: `Your application for "${role.title}" was accepted! Start chatting now.`,
           data: { matchId: result.match?.id, jobRoleId: rId },
+        })
+        .catch((err) => console.warn(`[NotificationQueue] publish failed: ${err.message}`));
+
+      queuePublisher
+        .publishNotification({
+          userId: recId,
+          type: 'MATCH',
+          title: 'Application Accepted',
+          body: `You accepted ${app.developer?.name || 'the candidate'} for "${role.title}"! You can now chat.`,
+          data: { matchId: result.match?.id, jobRoleId: rId, developerId: app.developerId },
         })
         .catch((err) => console.warn(`[NotificationQueue] publish failed: ${err.message}`));
 
@@ -218,9 +284,85 @@ class RoleService {
           })
           .catch((err) => console.warn(`[EmailQueue] publish failed: ${err.message}`));
       }
+    } else if (decision === 'REJECTED') {
+      // Directly persist rejection notification to Developer in PostgreSQL
+      const rejNotif = await notificationRepository.create({
+        userId: app.developerId,
+        type: 'APPLICATION_STATUS',
+        title: 'Application Status Update',
+        body: `Your application for "${role.title}" at ${role.companyName} was not selected. Keep exploring more roles!`,
+        data: { jobRoleId: rId, applicationId: appId, status: 'REJECTED' },
+      });
+
+      if (io) {
+        io.to(`user_${app.developerId}`).emit('new_notification', rejNotif);
+      }
+
+      queuePublisher
+        .publishNotification({
+          userId: app.developerId,
+          type: 'APPLICATION_STATUS',
+          title: 'Application Status Update',
+          body: `Your application for "${role.title}" at ${role.companyName} was not selected. Keep exploring more roles!`,
+          data: { jobRoleId: rId, status: 'REJECTED' },
+        })
+        .catch((err) => console.warn(`[NotificationQueue] publish failed: ${err.message}`));
+
+      if (app.developer?.email) {
+        queuePublisher
+          .publishEmail({
+            to: app.developer.email,
+            subject: `Update on your application for "${role.title}"`,
+            template: 'APPLICATION_STATUS',
+            data: {
+              roleTitle: role.title,
+              companyName: role.companyName,
+            },
+          })
+          .catch((err) => console.warn(`[EmailQueue] publish failed: ${err.message}`));
+      }
     }
 
     return result;
+  }
+
+  async getDeveloperApplications(developerId) {
+    const devId = Number(developerId);
+    const applications = await applicationRepository.findByDeveloper(devId);
+    const TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+    const appsWithDetails = await Promise.all(
+      applications.map(async (app) => {
+        const createdAt = new Date(app.createdAt).getTime();
+        const elapsedMs = Date.now() - createdAt;
+        const isExpired = app.status === 'PENDING' && elapsedMs > TTL_MS;
+        const remainingHours = Math.max(0, Math.ceil((TTL_MS - elapsedMs) / (1000 * 60 * 60)));
+
+        let matchId = null;
+        if (app.status === 'ACCEPTED') {
+          const recId = app.jobRole?.recruiter?.id;
+          if (recId) {
+            const [uA, uB] = matchRepository.canonicalPair(devId, recId);
+            const m = await matchRepository.findMatch(uA, uB);
+            if (m) matchId = m.id;
+          }
+        }
+
+        return {
+          id: app.id,
+          status: isExpired ? 'EXPIRED' : app.status,
+          rawStatus: app.status,
+          isExpired,
+          remainingHours,
+          appliedAt: app.createdAt,
+          coverLetter: app.coverLetter,
+          matchId,
+          role: formatRole(app.jobRole),
+        };
+      })
+    );
+
+    return appsWithDetails;
   }
 
   async getPersonalizedRoleFeed(developerId, query = {}) {

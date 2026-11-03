@@ -1,698 +1,350 @@
-# DevMatch
+# DevMatch — High-Throughput Developer & Recruiter Matching Platform
 
-> A Web app for developers to find collaborators — search by role and skills, swipe through ranked candidates, and unlock contact details only when both parties agree to work together.
-
-A full-stack project (React + Node + Postgres) built for the 6th semester FSD assignment.
+> An event-driven, full-stack talent discovery and hiring platform featuring recruiter role publishing, developer discovery feeds with automated compatibility scoring, instant collaboration requests, real-time WebSockets notifications & chat, candidate application tracking with a 3-day TTL, Redis caching & presence management, asynchronous RabbitMQ worker queues, and concurrency-hardened PostgreSQL transactions.
 
 ---
 
-## Table of contents
+## Architecture Overview
 
-- [What is DevMatch?](#what-is-devmatch)
-- [Features](#features)
-- [Tech stack](#tech-stack)
-- [Architecture](#architecture)
-- [Folder structure](#folder-structure)
-- [Local setup](#local-setup)
-- [Environment variables](#environment-variables)
-- [Database schema](#database-schema)
-- [API reference](#api-reference)
-- [Ranking algorithm](#ranking-algorithm)
-- [Privacy model](#privacy-model)
-- [Pages](#pages)
-- [Deployment](#deployment)
-- [Useful scripts](#useful-scripts)
-- [Project status](#project-status)
+```mermaid
+flowchart TD
+    subgraph Clients["Clients"]
+        WebClient["React 19 Web App (Vite + Tailwind)"]
+        MobileClient["React Native Android App (Expo)"]
+    end
 
----
+    subgraph API_Gateway["Express REST & WebSocket Server"]
+        MW["Middleware (Auth JWT, Zod Validation, Redis Rate Limiting)"]
+        WS["Socket.io WebSocket Engine (Real-time Notifications, Chat & Presence)"]
+        Controllers["Controllers (Auth, Roles, Swipes, Matches, Chat, Notifications)"]
+        Services["Service Layer (Business Logic, Compatibility Scoring & Dispatch)"]
+        Repositories["Repository Layer (Prisma Data Access & Deduplication)"]
+    end
 
-## What is DevMatch?
+    subgraph Storage["Data & Cache Layer"]
+        Postgres[("Neon PostgreSQL\n(Direct TCP, Advisory Locks, Composite Uniqueness, Interactive Transactions)")]
+        Redis[("Redis\n(Feed Caching, Rate Limiting, User Presence TTL)")]
+    end
 
-Most "find a co-founder" tools are either job boards (one-sided) or generic networks (noisy).
-DevMatch is built around one idea: **two developers who genuinely want to build together**.
+    subgraph Messaging["Asynchronous Queues & Background Workers"]
+        RabbitMQ[("RabbitMQ Message Broker (amqplib)")]
+        subgraph Workers["Decoupled Background Workers"]
+        MatchWorker["Candidate Matching Worker\n(Precomputes Scores & Warms Cache)"]
+        NotifWorker["Notification Worker\n(In-App Alerts Queue Consumer)"]
+        EmailWorker["Email Processing Worker\n(Nodemailer Async Delivery)"]
+        end
+    end
 
-- You **search** for the role you need ("Backend", "Android", etc.) plus optional skills
-- The app shows you a **ranked feed** of matching developers (best skill overlap first)
-- You **swipe right** to ask them to collaborate, or **left** to skip
-- When both of you swipe right, contact details (phone, email, LinkedIn, GitHub, Telegram) **unlock instantly**
-- Until then, no one can see anyone else's contact info — it stays private
+    WebClient & MobileClient -->|HTTP REST| MW
+    WebClient & MobileClient <-->|WebSockets| WS
+    MW --> Controllers
+    Controllers --> Services
+    Services --> Repositories
+    Repositories --> Postgres
 
-The twist over a regular dating-app clone is the **ranking** (skill match + rating + experience), the **privacy boundary** (contact gated on mutual consent), and the **search-first flow** (you never see a generic stack — always filtered to who you need).
+    Services <-->|Feed Cache & Invalidation| Redis
+    MW <-->|Sliding Window Rate Limit| Redis
+    WS <-->|Presence Heartbeats (60s TTL)| Redis
 
----
-
-## Features
-
-### Authentication & profile
-- Email + password registration with bcrypt hashing
-- JWT-based stateless auth (Bearer tokens, 7-day expiry)
-- Optional contact links: LinkedIn, GitHub, Telegram (URLs validated)
-- Required contact: phone number (lenient regex covering international formats)
-- Skills as a free-form tag list, stored as a true many-to-many relation
-
-### Search & discovery
-- Search-first flow — landing on `/swipe` shows a hero with role + skills picker before any cards appear
-- Quick-pick chips for popular roles (Frontend, Backend, Android, ML, …) and skills (React, Node, Postgres, …)
-- Free-form role search — typing `"frontend"` matches `"Frontend Developer"`, `"FRONTEND"`, etc.
-
-### Smart ranking
-- Score formula `(skillMatch × 50) + (rating × 30) + (experience × 20)` — all factors normalized to 0–1 so total scores stay in the 0–100 range
-- Reference skills are **explicit filter** if provided, otherwise fall back to **the user's own skills** (personalized feed)
-- Tiebreakers: rating → experience → id
-
-### Swipe & match flow
-- `react-tinder-card`-powered drag-to-swipe gestures + clickable Skip / "Ask to collaborate" buttons
-- Re-swipes are idempotent (no duplicate entries — uses `upsert`)
-- Auto-match: when both users LIKE each other, a `Match` row is created in the same DB transaction as the second swipe
-- Already-swiped candidates are excluded from future searches
-
-### Privacy boundary (enforced server-side)
-- `GET /api/developers` strips `email`, `phone`, `linkedin`, `github`, `telegram` from every response
-- `GET /api/matches` returns the **other** user's full contact info — but only because a `Match` row links you
-- `GET /api/auth/me` always returns your own complete profile
-
-### UI / UX
-- White + pink theme (`#fff5f7` → `#ec4899`)
-- Responsive layout — desktop-first cards, mobile bottom-nav
-- Toast notifications for swipes, errors, success
-- "It's a connection!" celebration popup when a match auto-creates
-- Marketing landing page at `/` for unauthenticated visitors with hero, features, "How it works" steps, and final CTA
+    Services -->|Synchronous Direct DB Save & WS Push| WS
+    Services -->|Publish Events (Async Backup)| RabbitMQ
+    RabbitMQ --> Workers
+    Workers --> Postgres
+```
 
 ---
 
-## Tech stack
+## Key Features & Highlights
 
-| Layer | Technology | Why |
+### 1. Dual User Personas (Recruiters & Developers)
+- **Recruiter Persona**: Post technical roles with required skill tags, experience thresholds, and salary ranges. Search and filter candidates by skills/roles, swipe right to send collaboration requests, review applicants scored by compatibility algorithms, and accept or reject applications with atomic match creation.
+- **Developer Persona**: Discover matching job opportunities ranked via skill overlap, rating, and experience weights. Apply directly with custom cover notes, track active applications with a 3-day review TTL, discover peer collaborators, and manage inbound connection requests.
+
+### 2. Instant Collaboration & Connection Requests
+- **Recruiter-to-Candidate Collaboration**: Recruiters can browse developers on `/swipe` and send a connection request with a single right-swipe or heart tap.
+- **Direct Synchronous Notification Delivery**: Connection requests write directly to PostgreSQL in the request path and emit an immediate WebSocket event (`new_notification`), notifying the recipient instantaneously without polling delays or worker dependency.
+- **Built-in 30s Deduplication**: Notifications employ an in-database 30-second deduplication guard to ensure neither duplicate clicks nor background queue workers create redundant alerts.
+- **One-Click "Accept & Connect"**: Candidates can accept collaboration requests directly from their notification bell dropdown or via **Connections & Chat** $\rightarrow$ **Collaboration Requests Received** (`/connections`).
+- **Atomic Reciprocal Matching**: When accepted, a mutual `Match` is atomically created inside an advisory-locked PostgreSQL transaction, connection notifications are issued to both parties, and live chat is unlocked immediately.
+
+### 3. Candidate Application Tracking & 3-Day Review TTL
+- **My Applications Dashboard (`/applications`)**: Candidates have a dedicated view to track every role they've applied for, with real-time status indicators:
+  - `Under Review`: Features an active countdown clock indicating the 3-day recruiter review TTL.
+  - `Accepted • Connected`: Displays an active connection badge with a direct **"Start Live Chat"** button.
+  - `Not Selected`: Transparently reflects rejections when a recruiter decides not to proceed.
+- **Recruiter Application Management (`/recruiter`)**: Recruiters review applicant pools for each open role with compatibility scores, view applicant resumes/profiles, and click **"Accept Candidate"** or **"Reject"** with instant candidate notification.
+
+### 4. Interactive In-App Notification Center
+- **Persistent Header Bell**: Positioned in the global navigation bar, displaying an animated unread badge counter.
+- **Real-Time WebSocket Push**: Listens for `new_notification` and `new_match` events to trigger instant toast notifications and update the list dynamically.
+- **Actionable Notification Cards**:
+  - Collaboration requests feature inline **"Accept & Connect"** and **"Decline"** buttons.
+  - Match connections include a direct **"Start Live Chat"** action button.
+- **Spam-Free Experience**: Personalized exclusively to authentic job applications, status updates, and peer collaboration requests.
+
+### 5. WebSockets Real-Time Chat Engine (`ChatModal`)
+- Mounted directly on the HTTP server using `socket.io`.
+- Token-authenticated handshake verifying JWT claims before joining rooms.
+- **Room Isolation (`match_<matchId>`)**: Restricted strictly to authorized match participants.
+- **Chat Experience**: Real-time message exchange, typing indicators (`typing_start`, `typing_stop`), message read receipts (`mark_read`), and auto-scrolling message streams.
+
+### 6. Redis In-Memory Performance & Presence
+- **Feed Caching with Non-Blocking Invalidation**: Discovery feeds are cached in Redis (`feed:dev:<id>`, `feed:role:<id>`) with 5-minute TTL. Mutating actions (publishing roles, applying, profile edits) trigger background pattern invalidations (`feed:*`).
+- **User Presence Engine**: Heartbeat mechanism tracks active online sessions using Redis keys `presence:user:<id>` with a 60-second sliding TTL. Pipelined batch queries (`getUsersPresence`) allow sub-millisecond status lookups for entire connection lists.
+- **Sliding Window Rate Limiting**: Redis-backed rate limiters (`rate-limit-redis`) guard critical auth (`30 req/15min`) and action (`40 req/1min`) endpoints against burst abuse.
+
+### 7. RabbitMQ Event-Driven Background Workers
+Heavy background operations are decoupled from the synchronous HTTP request path:
+- **`devmatch.candidate_matching`**: Pre-computes candidate-job compatibility scores and warms the Redis feed cache upon role creation.
+- **`devmatch.notifications`**: Provides asynchronous queue durability for notification dispatch.
+- **`devmatch.email_processing`**: Sends transactional notifications (welcome emails, new applicant alerts, connection notices) via Nodemailer with preview URLs in development.
+
+### 8. Concurrency Hardening & High-Throughput Database Optimizations
+- **PostgreSQL Interactive Transactions**: Atomic multi-row mutations executed within `prisma.$transaction`.
+- **Advisory Transaction Locking**: Reciprocal swipe actions acquire a transaction-scoped advisory lock on canonical user pairs (`SELECT pg_advisory_xact_lock(minId, maxId)`), eliminating race conditions during simultaneous mutual swipes.
+- **Composite Uniqueness Invariants**:
+  - `@@unique([jobRoleId, developerId])`: Enforces idempotency for concurrent application bursts (double-tap / replay attacks).
+  - `@@unique([userAId, userBId])`: Canonical ordering (`userAId < userBId`) guarantees zero duplicate match rows.
+- **Direct Neon TCP Connection**: Configured with direct host endpoints (bypassing pooler proxy timeouts) to eliminate `Error { kind: Closed, cause: None }` connection drops.
+- **Optimized Lean Queries**: Streamlined data fetching without heavy nested joins, keeping application submissions fast (< 1.8s on remote databases).
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
 |---|---|---|
-| Frontend | **React 19** + Vite | Fast HMR, modern defaults |
-| Styling | **Tailwind CSS v3** | Utility-first, custom `brand` (pink) palette |
-| Routing | **React Router v6** | Declarative route guards |
-| Forms / data | Native `useState` + Axios | No state-management library needed for this scale |
-| Swipe gestures | **react-tinder-card** | Best-in-class card-deck drag library |
-| Toasts | **react-hot-toast** | Tiny, themeable |
-| Icons | **lucide-react** + custom SVGs | Generic icons from lucide; brand icons (Github, LinkedIn, Telegram) inlined as SVG components since lucide removed them in newer versions |
-| Backend | **Node 18+** + **Express 4** | Battle-tested, minimal |
-| ORM | **Prisma 5** | Type-safe queries, painless migrations |
-| Database | **PostgreSQL** (hosted on **Neon**) | Serverless-friendly, free tier |
-| Auth | **jsonwebtoken** + **bcryptjs** | Stateless JWT + pure-JS bcrypt (no native compile on Windows) |
-| Validation | **Zod** | Schema-driven request validation, clean error messages |
-| Security | helmet, cors | Standard headers + cross-origin policy |
-| Logging | morgan | Request logs in dev |
+| **Backend Framework** | Node.js + Express 4 | REST APIs, route-level middleware, centralized error handling |
+| **ORM & Database** | Prisma 5 + PostgreSQL (Neon) | Relational persistence, advisory locks, composite unique constraints |
+| **In-Memory Cache** | Redis 7 (`ioredis`) | Feed caching, rate limiting, user presence TTL |
+| **Message Broker** | RabbitMQ 3 (`amqplib`) | Async queues for matching, notifications, and emails |
+| **Real-Time Layer** | Socket.io 4 | Authenticated WebSocket connections, room chat, typing indicators, live alerts |
+| **Validation & Auth** | Zod + JWT + Bcryptjs | Strict request schemas, stateless Bearer tokens, password hashing |
+| **Email Worker** | Nodemailer | Asynchronous email dispatch with Ethereal preview URLs |
+| **Testing** | Jest + Supertest | Automated concurrency and race condition regression tests |
+| **Web Client** | React 19 + Vite + Tailwind CSS | Recruiter dashboard, developer feed, applications tracking, live chat modal |
+| **Mobile Client** | React Native (Expo) | Android/iOS mobile client with feed & real-time chat |
 
 ---
 
-## Architecture
+## Project Structure
 
 ```
-┌──────────────────┐                    ┌────────────────────┐                   ┌──────────────┐
-│  Browser (SPA)   │   HTTPS + JWT      │  Express API       │   Prisma TCP/SSL  │  Postgres    │
-│                  │ ───────────────▶   │                    │ ───────────────▶  │  (Neon)      │
-│  React + Vite    │                    │  Routes →          │                   │              │
-│  Axios client    │ ◀───────────────   │  Controllers →     │ ◀───────────────  │  6 tables    │
-│                  │   JSON responses   │  Services → Prisma │                   │              │
-└──────────────────┘                    └────────────────────┘                   └──────────────┘
-```
-
-The backend is a clean three-layer stack:
-
-- **Routes** (`src/routes/*.routes.js`) — wire HTTP verbs to validators + controllers
-- **Controllers** (`src/controllers/*.js`) — thin handlers that turn `req`/`res` into service calls
-- **Services** (`src/services/*.js`) — business logic (auth, ranking, swipe-with-match-creation). No Express imports here — they could be reused from a CLI or background job.
-
-This keeps tests easy and complex logic (ranking, match creation, privacy stripping) isolated from HTTP plumbing.
-
----
-
-## Folder structure
-
-```
-assignment/
+devMatch/
 ├── backend/
 │   ├── prisma/
-│   │   ├── schema.prisma                  # 5 models, 2 enums (kept), indexes
-│   │   └── migrations/                    # Versioned SQL — committed
+│   │   ├── schema.prisma             # 8 models (User, JobRole, RoleSkill, Application, Match, Message, Notification, Skill)
+│   │   ├── seed_devmatch.js          # Database seeder (50 jobs, 20 recruiters, 40 candidates)
+│   │   └── reset_test_ids.js         # Dedicated reset script for test1 and test2 accounts
 │   ├── scripts/
-│   │   ├── e2e.js                         # End-to-end smoke test
-│   │   └── inspect.js                     # Quick DB inspector
+│   │   ├── reproduce-race-condition.js# Live tracing script proving concurrency safeguards
+│   │   ├── test-phase2.js            # REST API verification (Recruiter role publish & apply)
+│   │   ├── test-phase3.js            # Redis caching, invalidation & presence verification
+│   │   ├── test-phase4.js            # RabbitMQ worker queue verification
+│   │   └── test-phase5.js            # WebSockets real-time chat verification
+│   ├── test-direct-notification-flow.js # End-to-end direct notification & chat verification
 │   ├── src/
-│   │   ├── config/
-│   │   │   ├── env.js                     # Loads + validates env vars (fail fast)
-│   │   │   └── prisma.js                  # Singleton Prisma client
-│   │   ├── controllers/
-│   │   │   ├── auth.controller.js
-│   │   │   ├── developer.controller.js
-│   │   │   ├── match.controller.js
-│   │   │   └── swipe.controller.js
-│   │   ├── middlewares/
-│   │   │   ├── auth.js                    # requireAuth (JWT verifier)
-│   │   │   ├── errorHandler.js            # Global Zod + Prisma error handler
-│   │   │   └── validate.js                # Zod request validator factory
-│   │   ├── routes/
-│   │   │   ├── auth.routes.js + auth.schema.js
-│   │   │   ├── developer.routes.js + developer.schema.js
-│   │   │   ├── swipe.routes.js + swipe.schema.js
-│   │   │   └── match.routes.js
-│   │   ├── services/
-│   │   │   ├── auth.service.js            # register, login, getMe, toPublicUser
-│   │   │   ├── developer.service.js       # listDevelopers, computeScore (ranking)
-│   │   │   ├── swipe.service.js           # recordSwipe (atomic match creation)
-│   │   │   └── match.service.js           # listMatches (with full contact)
-│   │   ├── utils/
-│   │   │   ├── asyncHandler.js
-│   │   │   ├── httpError.js
-│   │   │   ├── jwt.js
-│   │   │   └── password.js
-│   │   ├── app.js                         # Express app — no listen()
-│   │   └── server.js                      # listen() + graceful shutdown
-│   ├── .env.example
-│   └── package.json
+│   │   ├── config/                   # env, prisma (direct TCP), redis singleton configurations
+│   │   ├── controllers/              # auth, developer, match, role, swipe controllers
+│   │   ├── middlewares/              # auth, rateLimiter, validate, errorHandler
+│   │   ├── queues/                   # RabbitMQ connection manager & event publishers
+│   │   ├── repositories/             # Data access layer (user, role, application, match, swipe, notification)
+│   │   ├── routes/                   # REST route definitions & Zod schemas
+│   │   ├── services/                 # Business logic, scoring, presence, cache, swipe, role services
+│   │   ├── sockets/                  # Socket.io chat & direct real-time notification engine
+│   │   ├── workers/                  # RabbitMQ consumers (matching, notification, email)
+│   │   ├── app.js                    # Express app configuration
+│   │   └── server.js                 # HTTP server + Socket.io + background workers
+│   └── tests/
+│       └── concurrency.test.js       # Automated Jest concurrency regression test suite
 │
-├── frontend/
-│   ├── public/
-│   │   └── favicon.svg                    # Custom pink-heart logo
+├── frontend/                         # React 19 Web Client (Vite + Tailwind CSS)
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── DevCard.jsx                # Single swipe card design
-│   │   │   ├── Layout.jsx                 # Authenticated app shell + nav
-│   │   │   ├── Logo.jsx
-│   │   │   ├── MatchPopup.jsx             # "You're connected!" celebration
-│   │   │   ├── Spinner.jsx
-│   │   │   └── icons.jsx                  # GithubIcon, LinkedinIcon, TelegramIcon (custom SVG)
-│   │   ├── lib/
-│   │   │   ├── api.js                     # Axios instance + JWT interceptor
-│   │   │   ├── auth.jsx                   # AuthProvider context + useAuth hook
-│   │   │   └── Protected.jsx              # Route guard
-│   │   ├── pages/
-│   │   │   ├── Landing.jsx                # Public marketing page
-│   │   │   ├── Login.jsx
-│   │   │   ├── Register.jsx
-│   │   │   ├── Dashboard.jsx              # Profile + own contact + recent connections
-│   │   │   ├── Swipe.jsx                  # Search-first hero → card stack
-│   │   │   └── Connections.jsx            # Matched users with full contact reveal
-│   │   ├── App.jsx                        # Router
-│   │   ├── main.jsx                       # Entry — wraps AuthProvider + Toaster
-│   │   └── index.css                      # Tailwind + theme tokens + component classes
-│   ├── tailwind.config.js                 # Pink palette, gradients, animations
-│   ├── vite.config.js                     # /api proxy → :5000 in dev
-│   └── .env.example
+│   │   ├── components/               # NotificationCenter, ChatModal, DevCard, Layout, MatchPopup, etc.
+│   │   ├── lib/                      # api.js (Axios), auth.jsx (AuthContext), socket.js (Socket.io client)
+│   │   └── pages/                    # RecruiterDashboard, RolesFeed, MyApplications, Connections, Swipe, Auth
+│   └── vite.config.js
 │
-├── .gitignore                             # Root — covers backend, frontend, IDE files
-└── README.md                              # ← you are here
+├── mobile/                           # React Native Android/iOS Mobile Client
+│   ├── src/
+│   │   ├── screens/                  # AuthScreen, FeedScreen, MatchesScreen, ChatScreen
+│   │   ├── services/                 # api.js (Axios), socket.js (Socket.io)
+│   │   └── config.js                 # API & WebSocket endpoints configuration
+│   ├── App.js                        # Mobile navigation shell & real-time state
+│   └── app.json                      # Expo application manifest
+│
+└── docker-compose.yml                # Redis & RabbitMQ container orchestration
 ```
 
 ---
 
-## Local setup
+## Local Setup & Quickstart
 
 ### Prerequisites
+- **Node.js**: `v18+` or `v20+`
+- **Docker & Docker Compose**: For local Redis and RabbitMQ services
+- **PostgreSQL**: Neon cloud instance or local PostgreSQL
 
-- Node.js **18 or newer**
-- A PostgreSQL database — local install, Docker, or hosted (the project was developed against [Neon](https://neon.tech)'s free tier)
-- Git
+### 1. Start Infrastructure Services
+Start Redis and RabbitMQ with Docker Compose:
+```bash
+docker compose up -d
+```
+Verify containers are healthy:
+- Redis: `localhost:6379`
+- RabbitMQ: `localhost:5672` (Management Dashboard: `http://localhost:15672`, credentials: `guest` / `guest`)
 
-### 1. Clone and install
-
-```powershell
-git clone https://github.com/Sameetpatro/devMatch.git
-cd devMatch
-
-# Backend
+### 2. Backend Setup
+```bash
 cd backend
 npm install
-cp .env.example .env
 
-# Frontend (in a new terminal)
-cd ../frontend
-npm install --legacy-peer-deps         # required: react-tinder-card peer-dep mismatch
+# Copy environment template if not present
 cp .env.example .env
 ```
-
-### 2. Edit `backend/.env`
-
+Ensure `backend/.env` contains your PostgreSQL connection string and local services:
 ```env
-PORT=5000
+PORT=5001
 NODE_ENV=development
-DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
-JWT_SECRET="<generate a long random string>"
+CLIENT_ORIGIN="http://localhost:5173,http://localhost:5174"
+DATABASE_URL="postgresql://user:password@host/neondb?sslmode=require"
+JWT_SECRET="your-secure-jwt-secret"
 JWT_EXPIRES_IN="7d"
-CLIENT_ORIGIN="http://localhost:5173"
+REDIS_URL="redis://localhost:6379"
+RABBITMQ_URL="amqp://guest:guest@localhost:5672"
+EMAIL_FROM="DevMatch <noreply@devmatch.io>"
 ```
 
-Generate a strong JWT secret in PowerShell:
-```powershell
-[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
+Sync schema and seed initial data:
+```bash
+npx prisma db push
+
+# Optional: Seed 50 jobs, 20 recruiters, and 40 candidates
+node prisma/seed_devmatch.js
+
+# Start backend server
+npm run dev
 ```
+*The server starts on `http://localhost:5001` with Socket.io enabled and RabbitMQ consumers active.*
 
-### 3. Apply migrations + start
-
-```powershell
-# Inside backend/
-npm run prisma:generate
-npm run prisma:migrate -- --name init   # only the FIRST time on a fresh DB
-npm run dev                              # nodemon, http://localhost:5000
-
-# Inside frontend/ (other terminal)
-npm run dev                              # Vite, http://localhost:5173
+### 3. Frontend Web Setup
+In a new terminal:
+```bash
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
 ```
+*Open `http://localhost:5173` in your browser.*
 
-The frontend's Vite dev server proxies `/api/*` to `localhost:5000`, so there's no CORS dance in development.
-
-### 4. Verify
-
-- `http://localhost:5000/health` → `{ "status": "ok", ... }`
-- `http://localhost:5173/` → marketing landing page
-- Click **Get Started** → register → swipe
+### 4. Mobile Client Setup (React Native / Expo)
+In a new terminal:
+```bash
+cd mobile
+npm install
+npx expo start
+```
+*Press `a` to run on an Android emulator or scan the QR code using the Expo Go mobile app.*
 
 ---
 
-## Environment variables
+## Pre-Seeded Test Accounts
 
-### Backend
+The database comes pre-seeded with 50 jobs, 20 recruiters, and 40 developers, including two designated test accounts:
 
-| Variable | Required | Default | Notes |
-|---|:-:|---|---|
-| `PORT` | no | `5000` | HTTP port |
-| `NODE_ENV` | no | `development` | `production` enables tighter logging |
-| `DATABASE_URL` | **yes** | — | Postgres connection string. Append `?sslmode=require` for Neon |
-| `JWT_SECRET` | **yes** | — | Long random string. Treat like a password |
-| `JWT_EXPIRES_IN` | no | `7d` | Standard ms / vercel-ms format |
-| `CLIENT_ORIGIN` | no | `http://localhost:5173` | CORS allow-list. In prod, set to your Vercel URL |
-
-`src/config/env.js` validates required vars on boot — if `DATABASE_URL` or `JWT_SECRET` is missing, the server refuses to start.
-
-### Frontend
-
-| Variable | Required | Default | Notes |
-|---|:-:|---|---|
-| `VITE_API_URL` | no | `/api` | Where Axios sends requests. In dev, `/api` works because Vite proxies. In prod, set to your full backend URL like `https://devmatch-backend.onrender.com/api` |
-
----
-
-## Database schema
-
-5 tables + 1 enum.
-
-```
-┌───────────────────────────────────────┐
-│ User                                  │
-├───────────────────────────────────────┤
-│ id              int          PK       │
-│ email           string       UNIQUE   │
-│ passwordHash    string                │
-│ name            string                │
-│ role            string                │   <-- free-form, e.g. "Backend Systems"
-│ bio             text?                 │
-│ experienceYears int          0..60    │
-│ rating          float        0..5     │
-│ isAvailable     bool         true     │
-│ phone           string       NOT NULL │   <-- contact (gated)
-│ linkedin        string?               │
-│ github          string?               │
-│ telegram        string?               │
-│ createdAt       datetime              │
-│ updatedAt       datetime              │
-│                                       │
-│ idx(role), idx(isAvailable)           │
-└───────────────────────────────────────┘
-       ▲                ▲
-       │ 1..N           │ 1..N
-       │                │
-┌──────┴──────┐  ┌──────┴──────────┐  ┌──────────────────┐
-│ UserSkill   │  │ Swipe           │  │ Match            │
-├─────────────┤  ├─────────────────┤  ├──────────────────┤
-│ userId   PK │  │ id           PK │  │ id            PK │
-│ skillId  PK │  │ fromUserId   FK │  │ userAId       FK │
-│             │  │ toUserId     FK │  │ userBId       FK │   <-- userAId < userBId
-│ FK(User)    │  │ direction       │  │ createdAt        │       (canonical pair)
-│ FK(Skill)   │  │ createdAt       │  │                  │
-│             │  │                 │  │ UNIQUE(A, B)     │
-│             │  │ UNIQUE(from,to) │  │ idx(A), idx(B)   │
-└─────────────┘  └─────────────────┘  └──────────────────┘
-       ▲
-       │ 1..N
-┌──────┴───────┐
-│ Skill        │
-├──────────────┤
-│ id        PK │
-│ name      U  │
-└──────────────┘
-
-enum SwipeDirection { LIKE, PASS }
-```
-
-### Key invariants enforced by the schema
-
-- A user can swipe on another user only **once** (unique `fromUserId, toUserId`). Re-swipes are upserts.
-- A `Match` is stored only **once per pair** (`userAId < userBId` + unique constraint). Concurrent reciprocal-LIKE inserts can't create duplicates.
-- `UserSkill` is a true M2M join with composite PK and `onDelete: Cascade` — deleting a user wipes their skill links.
-
----
-
-## API reference
-
-All authenticated endpoints expect `Authorization: Bearer <jwt>`.
-
-### Auth
-
-#### `POST /api/auth/register`
-Public. Creates an account.
-
-```json
-// Request
-{
-  "email": "alice@example.com",
-  "password": "secret123",
-  "name": "Alice",
-  "role": "Frontend Developer",
-  "bio": "Loves building UIs",
-  "experienceYears": 3,
-  "skills": ["React", "TypeScript", "Tailwind"],
-  "phone": "+91 98765 43210",
-  "linkedin": "https://linkedin.com/in/alice",
-  "github": "https://github.com/alice",
-  "telegram": "@alice_dev"
-}
-```
-
-```json
-// 201 Created
-{
-  "user": { "id": 1, "email": "alice@example.com", "name": "Alice", "role": "Frontend Developer", "phone": "+91 98765 43210", ... },
-  "token": "eyJhbGc..."
-}
-```
-
-Validation rules: password ≥ 6 chars, valid email, phone matches `/^\+?[\d\s\-()]{7,30}$/`, optional URLs must parse, max 30 skills.
-
-#### `POST /api/auth/login`
-Public.
-
-```json
-// Request
-{ "email": "alice@example.com", "password": "secret123" }
-```
-
-```json
-// 200
-{ "user": { ... }, "token": "..." }
-```
-
-Errors are intentionally generic (`"Invalid email or password"`) for both wrong-email and wrong-password — never reveal which.
-
-#### `GET /api/auth/me`
-Authenticated. Returns the current user's full profile (including own contact info).
-
-### Developers (the swipe feed)
-
-#### `GET /api/developers`
-Authenticated. Returns a **ranked, contact-stripped** feed.
-
-Query params:
-| Param | Type | Default | Effect |
+| Persona | Email | Password | Role / Details |
 |---|---|---|---|
-| `role` | string | — | Case-insensitive substring match against `User.role` |
-| `skills` | CSV or repeated | — | At least one matching skill — also used as ranking reference |
-| `search` | string | — | Substring match against `User.name` |
-| `availableOnly` | bool | `true` | Filter to `isAvailable = true` |
-| `page` | int | `1` | 1-indexed |
-| `limit` | int | `20` | Max 100 |
+| **Candidate** | `test1@candidate.com` | `password123` | **Kenji Sato**: Rust, Tokio, WebAssembly, PostgreSQL |
+| **Recruiter** | `test2@recruiter.com` | `password123` | **Alex Rivera** (*Rust Systems Corp*): Rust Systems Lead opening |
 
-Auto-excludes:
-- The current user
-- Anyone the current user has already swiped on
-
-```json
-// 200
-{
-  "data": [
-    {
-      "id": 4,
-      "name": "Joydeep",
-      "role": "Frontend Developer",
-      "bio": "...",
-      "experienceYears": 2,
-      "rating": 0,
-      "isAvailable": true,
-      "skills": ["React", "TypeScript", "Tailwind"],
-      "score": 54,
-      "skillMatch": 1,
-      "matchingSkills": 3
-    }
-  ],
-  "meta": {
-    "total": 1,
-    "page": 1,
-    "limit": 20,
-    "pages": 1,
-    "referenceSkills": ["React", "TypeScript", "Tailwind"],
-    "weights": { "skill": 50, "rating": 30, "experience": 20 }
-  }
-}
+To reset test accounts at any time without wiping other data:
+```bash
+cd backend
+node prisma/reset_test_ids.js
 ```
-
-Note: contact fields (`email`, `phone`, `linkedin`, `github`, `telegram`) are **not present**.
-
-### Swipes
-
-#### `POST /api/swipes`
-Authenticated. Records a swipe. Auto-creates a `Match` if reciprocal LIKE detected.
-
-```json
-// Request
-{ "toUserId": 4, "direction": "LIKE" }   // or "PASS"
-```
-
-```json
-// 201
-{
-  "swipe": { "id": 7, "fromUserId": 3, "toUserId": 4, "direction": "LIKE", "createdAt": "..." },
-  "match": null,
-  "isNewMatch": false
-}
-```
-
-When the other side has already LIKEd:
-```json
-{
-  "swipe": { ... },
-  "match": { "id": 1, "userAId": 3, "userBId": 4, "createdAt": "..." },
-  "isNewMatch": true
-}
-```
-
-Errors: `400` self-swipe, `404` target not found.
-
-### Matches / Connections
-
-#### `GET /api/matches`
-Authenticated. Returns the current user's matches with the **other** user's full contact info.
-
-```json
-// 200
-{
-  "data": [
-    {
-      "matchId": 1,
-      "matchedAt": "...",
-      "user": {
-        "id": 4,
-        "email": "joydeep@gmail.com",
-        "name": "Joydeep",
-        "role": "Frontend Developer",
-        "phone": "+91 9876543213",
-        "linkedin": "https://linkedin.com/in/joydeep-fe",
-        "github": "https://github.com/joydeep-fe",
-        "telegram": "@joydeep_fe",
-        "skills": ["React", "TypeScript", "Tailwind"]
-      }
-    }
-  ],
-  "total": 1
-}
-```
-
-#### `GET /api/matches/:userId`
-Authenticated. Spec-compatibility alias — only succeeds if `:userId === currentUser.id`. Otherwise `403`.
-
-### Health
-
-#### `GET /health`
-Public. Always returns `{ "status": "ok", ... }` — used by Render uptime check.
 
 ---
 
-## Ranking algorithm
+## Testing & Verification
 
-For every candidate in the feed:
-
-```
-referenceSkills  = explicit ?skills filter, OR the current user's own skills
-matchingSkills   = count of candidate skills present in referenceSkills
-skillMatch       = matchingSkills / max(referenceSkills.length, 1)        // 0..1
-ratingNorm       = min(rating / 5, 1)                                     // 0..1   (rating is 0..5)
-expNorm          = min(experienceYears / 10, 1)                           // 0..1   (caps at 10y)
-
-score = (skillMatch  × 50)
-      + (ratingNorm  × 30)
-      + (expNorm     × 20)                                                // 0..100
+### 1. Direct Notification & Connection Workflow
+Simulates a recruiter sending a connection request, verifies instant direct DB notification persistence, tests candidate acceptance, mutual match creation, and real-time chat messaging:
+```bash
+cd backend
+node test-direct-notification-flow.js
 ```
 
-Tiebreakers (in order): higher score → higher rating → more experience → lower id.
+### 2. Concurrency & Race Condition Suite
+Verifies database-level safeguards (PostgreSQL advisory transaction locks and unique constraints):
+```bash
+cd backend
 
-### Why normalize?
+# Run the live race condition tracing script
+npm run test:concurrency
 
-The literal spec formula `(skill_match × 50) + (rating × 30) + (experience × 20)` would let a 60-year-veteran score 1200 from experience alone, dwarfing skill match. Normalizing keeps all three factors in 0–1 range, so weights actually correspond to relative importance:
+# Run automated Jest regression tests
+npm test
+```
 
-- **50% skill overlap** — most important
-- **30% rating** — quality signal (still 0 for everyone in this prototype)
-- **20% experience** — but caps at 10 years (anyone 10y+ is treated equally)
+### 3. Layer-by-Layer Verification Scripts
+```bash
+cd backend
 
-A perfect match maxes at exactly 100.
+# Phase 2: Role publishing, feed scoring & candidate applications
+node scripts/test-phase2.js
 
-### Worked example
+# Phase 3: Redis caching (sub-ms hits), invalidation & user presence pipeline
+node scripts/test-phase3.js
 
-Sameet (Android dev) searches with `?skills=React,TypeScript`. Reference set = `["react", "typescript"]`.
+# Phase 4: RabbitMQ async queues (candidate matching, in-app notifications, email)
+node scripts/test-phase4.js
 
-| Candidate | Their skills | Matching | skillMatch | exp norm | Score |
-|---|---|---|---|---|---|
-| Alice (3y) | React, TS, Tailwind | 2 | 1.0 | 0.3 | **56** |
-| Joydeep (2y) | React, TS, Tailwind | 2 | 1.0 | 0.2 | **54** |
-| Harsh (4y) | Python, ML, etc. | 0 | 0.0 | 0.4 | **8** |
-| Shikhar (3y) | Node, Postgres, etc. | 0 | 0.0 | 0.3 | **6** |
-
-Alice wins on experience, even though she has the same skill match as Joydeep.
-
----
-
-## Privacy model
-
-| Endpoint | Email | Phone | LinkedIn | GitHub | Telegram |
-|---|:-:|:-:|:-:|:-:|:-:|
-| `GET /api/auth/me` (your own profile) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `GET /api/developers` (the swipe feed) | hidden | hidden | hidden | hidden | hidden |
-| `GET /api/matches` (your connections) | ✅ (other side) | ✅ | ✅ | ✅ | ✅ |
-
-Stripping happens server-side in `src/services/developer.service.js → toPublicDeveloper()`. Even if a malicious client crafts a request, contact info never leaves the server until a `Match` row exists between the two users.
+# Phase 5: WebSockets handshake auth, room messaging & typing indicators
+node scripts/test-phase5.js
+```
 
 ---
 
-## Pages
+## API Reference Summary
 
-### Public
+### Authentication (`/api/auth`)
+- `POST /register`: Register user with persona (`DEVELOPER` or `RECRUITER`), skills, and contact details.
+- `POST /login`: Authenticate and receive signed JWT.
+- `GET /me`: Fetch authenticated user profile.
 
-| Route | Page | Notes |
-|---|---|---|
-| `/` | Landing | Hero + features + how-it-works + CTA. Auto-redirects authenticated users to `/dashboard`. |
-| `/login` | Login | Email + password. |
-| `/register` | Register | Full profile form including phone (required) + 3 optional contact links. |
+### Roles & Recruitment (`/api/roles`)
+- `POST /`: *(Recruiter)* Publish new role with required skills, experience, and salary range.
+- `GET /`: *(Recruiter)* List all roles posted by current recruiter.
+- `GET /feed`: *(Developer)* Discover personalized job feed scored by compatibility formula.
+- `POST /:id/apply`: *(Developer)* Submit application for a job role (direct recruiter notification).
+- `GET /:id/candidates`: *(Recruiter)* View ranked applicants with compatibility scores.
+- `POST /:id/applications/:appId/decision`: *(Recruiter)* Accept (`MATCHED`) or reject applicant.
 
-### Authenticated (wrapped in `Protected` guard)
+### Candidate Applications (`/api/applications`)
+- `GET /my`: *(Developer)* List all submitted applications with statuses (`PENDING`, `ACCEPTED`, `REJECTED`) and 3-day review TTL countdown.
 
-| Route | Page | Notes |
-|---|---|---|
-| `/dashboard` | Profile dashboard | Hero, your contact (visible only to your connections), stats, recent connections preview. |
-| `/swipe` | Search-first swipe | Hero with role + skills picker → card stack. "Ask to collaborate" CTA. |
-| `/connections` | Connections list | All matched developers with full contact reveal (clickable phone, mailto, LinkedIn, GitHub, Telegram). |
-| `/matches` | redirects → `/connections` | Backwards-compat. |
+### Swipes & Collaboration Requests (`/api/swipes`)
+- `POST /`: Send swipe / connection request (`direction: 'LIKE'` or `'PASS'`). Direct DB notification + WebSocket event emitted.
+- `GET /received`: List inbound collaboration requests received with connection statuses.
+- `GET /sent`: List outbound connection requests sent.
 
----
+### Notifications (`/api/notifications`)
+- `GET /`: List notifications for current user with unread filter.
+- `PATCH /:id/read`: Mark single notification as read.
+- `POST /read-all`: Mark all notifications as read.
 
-## Deployment
+### Real-Time Chat & Matches (`/api/matches`)
+- `GET /`: List all mutual matches with unlocked contact information and presence statuses.
+- `GET /:id/messages`: Paginated message history for a match.
+- `POST /:id/messages`: Send chat message (persists in DB and emits via Socket.io).
 
-This monorepo deploys backend and frontend to **separate platforms** by setting **Root Directory** in each.
-
-### Backend on Render
-
-1. https://render.com → **New Web Service** → connect this repo
-2. Settings:
-   | | |
-   |---|---|
-   | Root Directory | `backend` |
-   | Build Command | `npm install && npx prisma generate && npx prisma migrate deploy` |
-   | Start Command | `npm start` |
-   | Runtime | Node |
-3. Environment variables: `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CLIENT_ORIGIN`. Render auto-injects `PORT` — don't set it manually.
-4. Open `https://<service>.onrender.com/health` to verify.
-
-> Note: free-tier services sleep after 15 min idle; first request after wake takes ~30s.
-
-### Frontend on Vercel
-
-1. https://vercel.com → **Import Git Repository**
-2. Settings:
-   | | |
-   |---|---|
-   | Framework Preset | Vite (auto-detected) |
-   | Root Directory | `frontend` |
-   | Install Command | `npm install --legacy-peer-deps` ← **required** |
-3. Environment variable: `VITE_API_URL=https://<your-render-service>.onrender.com/api`
-4. Once deployed, copy the Vercel URL and update `CLIENT_ORIGIN` in Render so CORS allows it.
-
-### Database (Neon)
-
-Already hosted — no extra deploy step. The `migrate deploy` in Render's build command applies any pending migrations on every deploy.
-
----
-
-## Useful scripts
-
-### Backend (`backend/`)
-
-| Command | Description |
-|---|---|
-| `npm run dev` | nodemon + watch reload |
-| `npm start` | production entrypoint |
-| `npm run prisma:generate` | regenerate Prisma client |
-| `npm run prisma:migrate` | run a dev migration (interactive) |
-| `npm run prisma:studio` | open Prisma Studio web UI for DB inspection |
-| `node scripts/inspect.js` | print all users + skill links in the terminal |
-| `node scripts/e2e.js` | run end-to-end smoke test against the running API |
-
-### Frontend (`frontend/`)
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Vite dev server, port 5173 |
-| `npm run build` | production bundle to `dist/` |
-| `npm run preview` | serve the prod bundle locally |
-
----
-
-## Project status
-
-Implemented (all checked):
-
-- [x] Step 1 — Backend setup (Express, Prisma, env validation, error handling)
-- [x] Step 2 — Database schema (User, Skill, UserSkill, Swipe, Match) with indexes
-- [x] Step 3 — Auth APIs (register / login / me) with JWT + bcrypt
-- [x] Step 4 — Developer fetch API with role / skills / search filtering + smart ranking
-- [x] Step 5 — Swipe + auto-match logic (atomic, idempotent, race-safe)
-- [x] Step 6 — Frontend setup (Vite + React 19 + Tailwind v3 + custom pink theme)
-- [x] Step 7 — Search-first swipe UI with `react-tinder-card` + filter chips
-- [x] Step 8 — End-to-end integration tested (login → search → swipe → connect → contact reveal)
-- [x] Privacy model — contact info gated on mutual match
-- [x] Marketing landing page at `/`
-- [x] Phone number required, LinkedIn / GitHub / Telegram optional
-- [x] Comprehensive `.gitignore` (root + per-package)
-
-Possible follow-ups (not in current scope):
-
-- Profile editing endpoint (`PATCH /api/auth/me`)
-- Real-time chat after match (websockets)
-- Image / avatar upload
-- Rating system (currently every user is 0.0 — score is mostly skill-driven)
-- Pagination cursor for the feed (currently page-based)
-- Unit tests with Jest / Vitest
-
----
-
-## Author
-
-Built by **Sameet Patro & Harsh Kaldoke** as a 6th-semester FSD assignment.
-Repo: https://github.com/Sameetpatro/devMatch
+### Presence & Health (`/api/presence`, `/health`)
+- `POST /presence/heartbeat`: Keep-alive heartbeat renewing Redis presence TTL (60s).
+- `GET /presence/:userId`: Check single user online status.
+- `POST /presence/batch`: Batch check online statuses for an array of user IDs.
+- `GET /health`: System health status endpoint.
 
 ---
 
 ## License
 
-MIT — feel free to fork, learn from, or extend.
+MIT License — Built by **Sameet Patro**.

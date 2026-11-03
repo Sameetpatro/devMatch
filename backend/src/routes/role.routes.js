@@ -15,6 +15,9 @@ const router = express.Router();
 // Developer Personalized Feed
 router.get('/feed', requireAuth, roleController.getPersonalizedRoleFeed);
 
+// Developer: View my submitted applications & statuses
+router.get('/applications/mine', requireAuth, roleController.getMyApplications);
+
 // Recruiter Role Management
 router.post(
   '/',

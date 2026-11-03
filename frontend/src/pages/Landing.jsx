@@ -1,6 +1,6 @@
 import { Link, Navigate } from 'react-router-dom';
 import {
-  Search, Sparkles, Handshake, ShieldCheck, ArrowRight, Users, Briefcase,
+  Search, Sparkles, Handshake, ShieldCheck, ArrowRight, Users, Briefcase, Star,
 } from 'lucide-react';
 import Logo from '../components/Logo.jsx';
 import { useAuth } from '../lib/auth.jsx';
@@ -55,14 +55,14 @@ export default function Landing() {
       {/* --- Hero --- */}
       <section className="px-4 sm:px-6 pt-10 sm:pt-16 pb-16">
         <div className="max-w-4xl mx-auto text-center animate-fade-in">
-          <span className="chip mb-5">
-            <Briefcase size={12} className="mr-1.5" />
-            For developers who want to build, together
+          <span className="chip-gradient mb-5">
+            <Sparkles size={13} className="mr-1.5 text-amber-500 fill-amber-400" />
+            For developers who want to build together
           </span>
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-gray-900 leading-[1.05]">
             Find the dev you actually
             <br className="hidden sm:block" />{' '}
-            want to <span className="text-brand-500">build with</span>.
+            want to <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500">build with</span>.
           </h1>
           <p className="mt-5 text-lg text-gray-600 max-w-2xl mx-auto">
             DevMatch is a Tinder-style platform where developers swipe to find collaborators —
@@ -85,26 +85,26 @@ export default function Landing() {
         <div className="mt-16 max-w-md mx-auto relative h-72 sm:h-80">
           {[
             { rot: '-rot-6', off: 'translate-x-[-12%] translate-y-2 opacity-60', body: 'React • Node • Postgres' },
-            { rot: '-rot-3', off: 'translate-x-[-6%] translate-y-1 opacity-80', body: 'Kotlin • Jetpack' },
+            { rot: '-rot-3', off: 'translate-x-[-6%] translate-y-1 opacity-80', body: 'Kotlin • Jetpack • GraphQL' },
             { rot: 'rot-0', off: '', body: 'You + your future collaborator' },
           ].map((c, i) => (
             <div
               key={i}
-              className={`absolute inset-0 card overflow-hidden transition-all`}
+              className={`absolute inset-0 card overflow-hidden transition-all border-pink-100 hover:border-amber-200`}
               style={{ transform: `translate(${i * -3}%, ${i * 4}px) rotate(${(2 - i) * -2}deg)`, zIndex: i }}
             >
               <div className="h-24 bg-brand-gradient" />
               <div className="px-5 pb-5 -mt-8">
-                <div className="h-14 w-14 rounded-2xl bg-brand-gradient text-white border-4 border-white shadow-card flex items-center justify-center text-xl font-extrabold">
+                <div className="h-14 w-14 rounded-2xl bg-white text-transparent bg-clip-text bg-gradient-to-br from-pink-500 to-amber-500 border-4 border-white shadow-card flex items-center justify-center text-xl font-extrabold">
                   {['S', 'A', 'D'][i]}
                 </div>
                 <div className="mt-3">
-                  <div className="h-3 w-32 bg-pink-100 rounded" />
-                  <div className="mt-2 h-2 w-24 bg-pink-50 rounded" />
+                  <div className="h-3 w-32 bg-amber-100 rounded" />
+                  <div className="mt-2 h-2 w-24 bg-pink-100 rounded" />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {c.body.split(' • ').map((t) => (
-                    <span key={t} className="chip">{t}</span>
+                  {c.body.split(' • ').map((t, idx) => (
+                    <span key={t} className={idx % 2 === 0 ? 'chip' : 'chip-yellow'}>{t}</span>
                   ))}
                 </div>
               </div>
@@ -114,10 +114,10 @@ export default function Landing() {
       </section>
 
       {/* --- What is DevMatch --- */}
-      <section className="px-4 sm:px-6 py-14 bg-white border-y border-pink-100">
+      <section className="px-4 sm:px-6 py-14 bg-white/80 backdrop-blur-sm border-y border-pink-100">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
-            What is <span className="text-brand-500">DevMatch</span>?
+            What is <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-amber-500">DevMatch</span>?
           </h2>
           <p className="mt-4 text-lg text-gray-600 leading-relaxed">
             Most "find a co-founder" tools are either job boards (one-sided) or generic networks
@@ -141,7 +141,7 @@ export default function Landing() {
 
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map(({ icon: Icon, title, body }) => (
-              <div key={title} className="card p-6 hover:scale-[1.02] transition-transform">
+              <div key={title} className="card p-6 hover:scale-[1.02] hover:border-amber-200 transition-all">
                 <div className="h-12 w-12 rounded-xl bg-brand-gradient flex items-center justify-center shadow-card">
                   <Icon size={22} className="text-white" />
                 </div>
@@ -154,7 +154,7 @@ export default function Landing() {
       </section>
 
       {/* --- How it works --- */}
-      <section className="px-4 sm:px-6 py-14 bg-white border-y border-pink-100">
+      <section className="px-4 sm:px-6 py-14 bg-white/80 backdrop-blur-sm border-y border-pink-100">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
@@ -165,7 +165,7 @@ export default function Landing() {
 
           <div className="grid gap-5 sm:grid-cols-3">
             {STEPS.map(({ n, title, body }) => (
-              <div key={n} className="card p-6 text-center relative">
+              <div key={n} className="card p-6 text-center relative hover:border-amber-200 transition-colors">
                 <div className="mx-auto h-12 w-12 rounded-full bg-brand-gradient text-white flex items-center justify-center text-lg font-extrabold shadow-card">
                   {n}
                 </div>
@@ -180,31 +180,31 @@ export default function Landing() {
       {/* --- Final CTA --- */}
       <section className="px-4 sm:px-6 py-16">
         <div className="max-w-3xl mx-auto card p-8 sm:p-12 text-center bg-brand-gradient text-white border-0 shadow-card">
-          <Users size={36} className="mx-auto opacity-90" />
+          <Users size={36} className="mx-auto opacity-95" />
           <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">
             Ready to find your collaborator?
           </h2>
-          <p className="mt-2 opacity-90">
+          <p className="mt-2 text-pink-50 text-base max-w-xl mx-auto">
             Join DevMatch and start matching with developers who fit your project.
           </p>
           <Link
             to="/register"
-            className="mt-6 inline-flex items-center gap-2 rounded-xl px-8 py-3.5 bg-white text-brand-600 font-bold hover:bg-pink-50 transition-colors text-base shadow"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl px-8 py-3.5 bg-amber-400 text-gray-950 font-bold hover:bg-amber-300 transition-all text-base shadow-lg hover:shadow-glow hover:scale-[1.02]"
           >
             Get started
             <ArrowRight size={18} />
           </Link>
-          <p className="mt-3 text-xs opacity-80">
+          <p className="mt-4 text-xs text-pink-100">
             Already have an account?{' '}
-            <Link to="/login" className="underline font-semibold">
+            <Link to="/login" className="underline font-semibold hover:text-white">
               Sign in
             </Link>
           </p>
         </div>
       </section>
 
-      <footer className="py-8 text-center text-xs text-gray-400">
-        DevMatch &copy; {new Date().getFullYear()} — Find your dev collaborator.
+      <footer className="py-8 text-center text-xs text-gray-500">
+        DevMatch &copy; {new Date().getFullYear()} — Connect. Build. Ship.
       </footer>
     </div>
   );

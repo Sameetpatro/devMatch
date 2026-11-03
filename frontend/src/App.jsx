@@ -8,6 +8,18 @@ import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Swipe from './pages/Swipe.jsx';
 import Connections from './pages/Connections.jsx';
+import RecruiterDashboard from './pages/RecruiterDashboard.jsx';
+import RolesFeed from './pages/RolesFeed.jsx';
+import MyApplications from './pages/MyApplications.jsx';
+import { useAuth } from './lib/auth.jsx';
+
+function HomeRedirect() {
+  const { user } = useAuth();
+  if (user?.userType === 'RECRUITER') {
+    return <Navigate to="/recruiter" replace />;
+  }
+  return <Navigate to="/roles" replace />;
+}
 
 export default function App() {
   return (
@@ -25,6 +37,10 @@ export default function App() {
           </Protected>
         }
       >
+        <Route path="/home" element={<HomeRedirect />} />
+        <Route path="/roles" element={<RolesFeed />} />
+        <Route path="/applications" element={<MyApplications />} />
+        <Route path="/recruiter" element={<RecruiterDashboard />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/swipe" element={<Swipe />} />
         <Route path="/connections" element={<Connections />} />
