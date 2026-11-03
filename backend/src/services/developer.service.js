@@ -1,4 +1,5 @@
-const prisma = require('../config/prisma');
+const userRepository = require('../repositories/user.repository');
+const swipeRepository = require('../repositories/swipe.repository');
 
 // ---- Ranking weights (sum to 100 so scores are 0..100) ----
 const W_SKILL = 50;
@@ -15,9 +16,10 @@ function normalizeSkillNames(names) {
 }
 
 // Compute the ranking score for a single candidate against a reference skill set.
-// Returns { score, skillMatch, matchingSkills }.
 function computeScore(candidate, referenceSkillsLower) {
-  const candidateSkillsLower = candidate.skills.map((us) => us.skill.name.toLowerCase());
+  const candidateSkillsLower = (candidate.skills || []).map((us) =>
+    (us.skill ? us.skill.name : us).toLowerCase()
+  );
 
   let matchingSkills = 0;
   if (referenceSkillsLower.length > 0) {
@@ -39,8 +41,6 @@ function computeScore(candidate, referenceSkillsLower) {
 }
 
 // Privacy: when listing developers in the swipe feed, hide all contact info
-// (email, phone, linkedin, github, telegram). Contact details only become
-// visible to a user once a Match exists between them.
 function toPublicDeveloper(user, scoring) {
   const {
     passwordHash, skills,
@@ -49,18 +49,9 @@ function toPublicDeveloper(user, scoring) {
   } = user;
   return {
     ...rest,
-    skills: skills.map((us) => us.skill.name),
+    skills: (skills || []).map((us) => (us.skill ? us.skill.name : us)),
     ...scoring,
   };
-}
-
-// Find IDs the current user has already swiped on (so they don't reappear in feed).
-async function getSwipedUserIds(currentUserId) {
-  const swipes = await prisma.swipe.findMany({
-    where: { fromUserId: currentUserId },
-    select: { toUserId: true },
-  });
-  return swipes.map((s) => s.toUserId);
 }
 
 async function listDevelopers(currentUserId, query) {
@@ -74,36 +65,24 @@ async function listDevelopers(currentUserId, query) {
   if (role) where.role = { contains: role, mode: 'insensitive' };
   if (search) where.name = { contains: search, mode: 'insensitive' };
 
-  const swipedIds = await getSwipedUserIds(currentUserId);
+  const swipedIds = await swipeRepository.getSwipedUserIds(currentUserId);
   if (swipedIds.length > 0) where.id = { not: currentUserId, notIn: swipedIds };
 
-  // Determine reference skills for the ranking.
-  // 1) explicit ?skills=... wins
-  // 2) otherwise fall back to the current user's own skills (personalized feed)
+  // Reference skills for ranking
   let referenceSkills;
   if (skillsFilter && skillsFilter.length > 0) {
     referenceSkills = skillsFilter;
   } else {
-    const me = await prisma.user.findUnique({
-      where: { id: currentUserId },
-      include: { skills: { include: { skill: true } } },
-    });
-    referenceSkills = (me?.skills || []).map((us) => us.skill.name);
+    const me = await userRepository.findById(currentUserId, { includeSkills: true });
+    referenceSkills = (me?.skills || []).map((us) => us.skill?.name || us);
   }
   const referenceSkillsLower = normalizeSkillNames(referenceSkills);
 
-  // Fetch full candidate set, then rank in memory.
-  // For a college project this is simple and fast; for production scale we'd
-  // push the score into a Postgres view or materialize precomputed scores.
-  const candidates = await prisma.user.findMany({
-    where,
-    include: { skills: { include: { skill: true } } },
-  });
+  const candidates = await userRepository.findCandidates(where, { limit: 200 });
 
   const ranked = candidates
     .map((c) => ({ user: c, scoring: computeScore(c, referenceSkillsLower) }))
     .sort((a, b) => {
-      // Primary: score desc. Tiebreak: rating desc, then experience desc, then id asc.
       if (b.scoring.score !== a.scoring.score) return b.scoring.score - a.scoring.score;
       if (b.user.rating !== a.user.rating) return b.user.rating - a.user.rating;
       if (b.user.experienceYears !== a.user.experienceYears)
@@ -128,4 +107,4 @@ async function listDevelopers(currentUserId, query) {
   };
 }
 
-module.exports = { listDevelopers, computeScore };
+module.exports = { listDevelopers, computeScore, toPublicDeveloper };

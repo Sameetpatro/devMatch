@@ -1,4 +1,5 @@
-const prisma = require('../config/prisma');
+const userRepository = require('../repositories/user.repository');
+const queuePublisher = require('../queues/publisher');
 const { hashPassword, verifyPassword } = require('../utils/password');
 const { signToken } = require('../utils/jwt');
 const HttpError = require('../utils/httpError');
@@ -10,76 +11,53 @@ function toPublicUser(user) {
   return rest;
 }
 
-// Issue a JWT for a given user record.
+// Issue a JWT for a given user record, including role/userType.
 function issueTokenFor(user) {
-  return signToken({ sub: user.id, email: user.email });
-}
-
-// Upsert skills by name and connect them to a user via the UserSkill join.
-async function attachSkillsToUser(tx, userId, skillNames) {
-  if (!skillNames || skillNames.length === 0) return;
-
-  const normalized = [...new Set(skillNames.map((s) => s.trim()).filter(Boolean))];
-
-  await Promise.all(
-    normalized.map((name) =>
-      tx.skill.upsert({
-        where: { name },
-        update: {},
-        create: { name },
-      })
-    )
-  );
-
-  const skills = await tx.skill.findMany({
-    where: { name: { in: normalized } },
-    select: { id: true },
-  });
-
-  await tx.userSkill.createMany({
-    data: skills.map((s) => ({ userId, skillId: s.id })),
-    skipDuplicates: true,
+  return signToken({
+    sub: user.id,
+    email: user.email,
+    userType: user.userType || 'DEVELOPER',
   });
 }
 
 async function register(input) {
   const {
-    email, password, name, role, bio, experienceYears, skills,
+    email, password, name, role, userType, companyName, bio, experienceYears, skills,
     phone, linkedin, github, telegram,
   } = input;
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await userRepository.findByEmail(email);
   if (existing) {
     throw new HttpError(409, 'Email already registered');
   }
 
   const passwordHash = await hashPassword(password);
 
-  const user = await prisma.$transaction(async (tx) => {
-    const created = await tx.user.create({
-      data: {
-        email,
-        passwordHash,
-        name,
-        role,
-        bio: bio ?? null,
-        experienceYears: experienceYears ?? 0,
-        phone,
-        linkedin: linkedin ?? null,
-        github: github ?? null,
-        telegram: telegram ?? null,
-      },
-    });
+  const user = await userRepository.createWithSkills(
+    {
+      email,
+      passwordHash,
+      name,
+      userType: userType || 'DEVELOPER',
+      companyName: companyName ?? null,
+      role,
+      bio: bio ?? null,
+      experienceYears: experienceYears ?? 0,
+      phone,
+      linkedin: linkedin ?? null,
+      github: github ?? null,
+      telegram: telegram ?? null,
+    },
+    skills
+  );
 
-    await attachSkillsToUser(tx, created.id, skills);
-
-    return tx.user.findUnique({
-      where: { id: created.id },
-      include: {
-        skills: { include: { skill: true } },
-      },
-    });
-  });
+  // Asynchronously dispatch welcome email via RabbitMQ
+  queuePublisher.publishEmail({
+    to: user.email,
+    subject: 'Welcome to DevMatch!',
+    template: 'WELCOME',
+    data: { name: user.name },
+  }).catch((err) => console.warn(`Failed to enqueue welcome email: ${err.message}`));
 
   return {
     user: toPublicUser(user),
@@ -90,10 +68,7 @@ async function register(input) {
 async function login(input) {
   const { email, password } = input;
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: { skills: { include: { skill: true } } },
-  });
+  const user = await userRepository.findByEmail(email);
 
   // Generic message — never reveal whether the email exists.
   if (!user) throw new HttpError(401, 'Invalid email or password');
@@ -108,12 +83,9 @@ async function login(input) {
 }
 
 async function getMe(userId) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { skills: { include: { skill: true } } },
-  });
+  const user = await userRepository.findById(userId, { includeSkills: true });
   if (!user) throw new HttpError(404, 'User not found');
   return toPublicUser(user);
 }
 
-module.exports = { register, login, getMe, toPublicUser };
+module.exports = { register, login, getMe, toPublicUser, issueTokenFor };

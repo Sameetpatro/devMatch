@@ -1,7 +1,7 @@
 // End-to-end smoke test against the running API.
 // Verifies: auth (with phone), privacy on feed, contact reveal in matches.
 
-const BASE = 'http://localhost:5000';
+const BASE = 'http://localhost:5001';
 
 async function call(method, path, { token, body } = {}) {
   const res = await fetch(BASE + path, {

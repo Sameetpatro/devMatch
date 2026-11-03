@@ -1,4 +1,17 @@
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+// Try backend/.env first, then root .env, then default
+const backendEnvPath = path.resolve(__dirname, '../../.env');
+const rootEnvPath = path.resolve(__dirname, '../../../.env');
+
+if (fs.existsSync(backendEnvPath)) {
+  require('dotenv').config({ path: backendEnvPath });
+} else if (fs.existsSync(rootEnvPath)) {
+  require('dotenv').config({ path: rootEnvPath });
+} else {
+  require('dotenv').config();
+}
 
 const required = ['DATABASE_URL', 'JWT_SECRET'];
 for (const key of required) {
@@ -22,7 +35,7 @@ const clientOrigins =
         .filter(Boolean);
 
 module.exports = {
-  port: parseInt(process.env.PORT, 10) || 5000,
+  port: parseInt(process.env.PORT, 10) || 5001,
   nodeEnv: process.env.NODE_ENV || 'development',
   databaseUrl: process.env.DATABASE_URL,
   jwt: {
@@ -30,4 +43,13 @@ module.exports = {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
   clientOrigin: clientOrigins,
+  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  rabbitmqUrl: process.env.RABBITMQ_URL || 'amqp://localhost:5672',
+  smtp: {
+    host: process.env.SMTP_HOST || 'smtp.ethereal.email',
+    port: parseInt(process.env.SMTP_PORT, 10) || 587,
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.EMAIL_FROM || 'DevMatch <noreply@devmatch.io>',
+  },
 };

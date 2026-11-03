@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 
 // Singleton Prisma client — prevents exhausting DB connections during

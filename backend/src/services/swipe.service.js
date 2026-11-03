@@ -1,59 +1,65 @@
 const prisma = require('../config/prisma');
+const userRepository = require('../repositories/user.repository');
+const swipeRepository = require('../repositories/swipe.repository');
+const matchRepository = require('../repositories/match.repository');
 const HttpError = require('../utils/httpError');
-
-// Canonical pair ordering: each Match row has userAId < userBId, so a pair (X,Y)
-// is stored once regardless of who LIKEd first.
-function canonicalPair(a, b) {
-  return a < b ? [a, b] : [b, a];
-}
 
 /**
  * Record a swipe. If LIKE and the target has already LIKEd back, also create
- * the Match row (atomically, in a single transaction).
+ * the Match row (atomically, inside an interactive PostgreSQL transaction with advisory lock).
  *
  * Returns: { swipe, match | null, isNewMatch: boolean }
  */
 async function recordSwipe(fromUserId, { toUserId, direction }) {
-  if (fromUserId === toUserId) {
+  const fromId = Number(fromUserId);
+  const toId = Number(toUserId);
+
+  if (fromId === toId) {
     throw new HttpError(400, 'You cannot swipe on yourself');
   }
 
-  const target = await prisma.user.findUnique({ where: { id: toUserId }, select: { id: true } });
+  const target = await userRepository.findById(toId);
   if (!target) throw new HttpError(404, 'Target user not found');
 
-  return prisma.$transaction(async (tx) => {
-    const swipe = await tx.swipe.upsert({
-      where: { fromUserId_toUserId: { fromUserId, toUserId } },
-      create: { fromUserId, toUserId, direction },
-      update: { direction },
-    });
+  const [minId, maxId] = matchRepository.canonicalPair(fromId, toId);
 
-    let match = null;
-    let isNewMatch = false;
+  return prisma.$transaction(
+    async (tx) => {
+      // Database-level safeguard: PostgreSQL transaction advisory lock on canonical user pair.
+      // Serializes concurrent reciprocal swipes so neither thread reads a stale snapshot.
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock($1::integer, $2::integer)',
+        minId,
+        maxId
+      );
 
-    if (direction === 'LIKE') {
-      const reciprocal = await tx.swipe.findUnique({
-        where: { fromUserId_toUserId: { fromUserId: toUserId, toUserId: fromUserId } },
+      const swipe = await swipeRepository.recordSwipe(tx, {
+        fromUserId: fromId,
+        toUserId: toId,
+        direction,
       });
 
-      if (reciprocal && reciprocal.direction === 'LIKE') {
-        const [userAId, userBId] = canonicalPair(fromUserId, toUserId);
+      let match = null;
+      let isNewMatch = false;
 
-        const existing = await tx.match.findUnique({
-          where: { userAId_userBId: { userAId, userBId } },
-        });
+      if (direction === 'LIKE') {
+        const reciprocal = await swipeRepository.findReciprocalSwipe(tx, fromId, toId);
 
-        match = await tx.match.upsert({
-          where: { userAId_userBId: { userAId, userBId } },
-          create: { userAId, userBId },
-          update: {},
-        });
-        isNewMatch = !existing;
+        if (reciprocal && reciprocal.direction === 'LIKE') {
+          const existing = await matchRepository.findMatch(fromId, toId, tx);
+
+          match = await matchRepository.createMatch(tx, fromId, toId);
+          isNewMatch = !existing;
+        }
       }
-    }
 
-    return { swipe, match, isNewMatch };
-  });
+      return { swipe, match, isNewMatch };
+    },
+    {
+      maxWait: 15000,
+      timeout: 25000,
+    }
+  );
 }
 
 module.exports = { recordSwipe };

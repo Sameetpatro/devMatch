@@ -1,5 +1,5 @@
 // Prisma schema for DevMatch
-// Models: User, Skill, UserSkill (M2M), Swipe, Match
+// Models: User, Skill, UserSkill, Swipe, Match, JobRole, RoleSkill, Application, Message, Notification
 
 generator client {
   provider = "prisma-client-js"
@@ -17,6 +17,23 @@ enum SwipeDirection {
   PASS
 }
 
+enum UserType {
+  DEVELOPER
+  RECRUITER
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  MATCHED
+}
+
 // ---------- User ----------
 
 model User {
@@ -24,13 +41,15 @@ model User {
   email           String   @unique
   passwordHash    String
   name            String
-  role            String   @db.VarChar(60)
+  userType        UserType @default(DEVELOPER)
+  companyName     String?  @db.VarChar(100)
+  role            String   @db.VarChar(60) // Developer title or Recruiter headline
   bio             String?  @db.Text
   experienceYears Int      @default(0)
   rating          Float    @default(0)
   isAvailable     Boolean  @default(true)
 
-  // Contact info — only visible to users who have a Match with this user.
+  // Contact info — revealed only when a mutual Match exists
   phone           String   @db.VarChar(30)
   linkedin        String?  @db.VarChar(200)
   github          String?  @db.VarChar(200)
@@ -39,12 +58,20 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  skills        UserSkill[]
-  swipesSent    Swipe[]     @relation("SwipesFrom")
-  swipesGot     Swipe[]     @relation("SwipesTo")
-  matchesAsA    Match[]     @relation("MatchUserA")
-  matchesAsB    Match[]     @relation("MatchUserB")
+  // Developer relations
+  skills          UserSkill[]
+  swipesSent      Swipe[]        @relation("SwipesFrom")
+  swipesGot       Swipe[]        @relation("SwipesTo")
+  matchesAsA      Match[]        @relation("MatchUserA")
+  matchesAsB      Match[]        @relation("MatchUserB")
+  applications    Application[]  @relation("DeveloperApplications")
+  messagesSent    Message[]      @relation("SentMessages")
+  notifications   Notification[] @relation("UserNotifications")
 
+  // Recruiter relations
+  rolesPosted     JobRole[]      @relation("RecruiterRoles")
+
+  @@index([userType])
   @@index([role])
   @@index([isAvailable])
 }
@@ -52,10 +79,10 @@ model User {
 // ---------- Skill ----------
 
 model Skill {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
-
+  id    Int         @id @default(autoincrement())
+  name  String      @unique
   users UserSkill[]
+  roles RoleSkill[]
 }
 
 // ---------- UserSkill (M2M join) ----------
@@ -71,15 +98,75 @@ model UserSkill {
   @@index([skillId])
 }
 
+// ---------- JobRole (Recruiter Role Posting) ----------
+
+model JobRole {
+  id                     Int       @id @default(autoincrement())
+  recruiterId            Int
+  title                  String    @db.VarChar(100)
+  companyName            String    @db.VarChar(100)
+  description            String    @db.Text
+  location               String?   @db.VarChar(100)
+  isRemote               Boolean   @default(true)
+  experienceYearsRequired Int       @default(0)
+  salaryRange            String?   @db.VarChar(60)
+  status                 JobStatus @default(OPEN)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  recruiter    User          @relation("RecruiterRoles", fields: [recruiterId], references: [id], onDelete: Cascade)
+  skills       RoleSkill[]
+  applications Application[]
+  matches      Match[]       @relation("RoleMatches")
+
+  @@index([recruiterId])
+  @@index([status])
+  @@index([title])
+}
+
+// ---------- RoleSkill (M2M join for JobRole <-> Skill) ----------
+
+model RoleSkill {
+  roleId  Int
+  skillId Int
+
+  role  JobRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  skill Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, skillId])
+  @@index([skillId])
+}
+
+// ---------- Application ----------
+// Composite uniqueness on [jobRoleId, developerId] ensures safe idempotent applications
+
+model Application {
+  id          Int               @id @default(autoincrement())
+  jobRoleId   Int
+  developerId Int
+  status      ApplicationStatus @default(PENDING)
+  coverLetter String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  jobRole   JobRole @relation(fields: [jobRoleId], references: [id], onDelete: Cascade)
+  developer User    @relation("DeveloperApplications", fields: [developerId], references: [id], onDelete: Cascade)
+
+  @@unique([jobRoleId, developerId])
+  @@index([developerId])
+  @@index([jobRoleId])
+  @@index([status])
+}
+
 // ---------- Swipe ----------
 // Records every swipe. Unique (fromUserId, toUserId) prevents double-swiping.
 
 model Swipe {
-  id          Int            @id @default(autoincrement())
-  fromUserId  Int
-  toUserId    Int
-  direction   SwipeDirection
-  createdAt   DateTime       @default(now())
+  id         Int            @id @default(autoincrement())
+  fromUserId Int
+  toUserId   Int
+  direction  SwipeDirection
+  createdAt  DateTime       @default(now())
 
   fromUser User @relation("SwipesFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser   User @relation("SwipesTo",   fields: [toUserId],   references: [id], onDelete: Cascade)
@@ -89,19 +176,60 @@ model Swipe {
 }
 
 // ---------- Match ----------
-// Created when two users LIKE each other.
-// We store (userAId, userBId) with userAId < userBId so each pair is unique.
+// Created when two users LIKE each other, or when a recruiter accepts an applicant.
+// Canonical ordering (userAId < userBId) prevents duplicate inverse pairings.
 
 model Match {
   id        Int      @id @default(autoincrement())
   userAId   Int
   userBId   Int
+  jobRoleId Int?
   createdAt DateTime @default(now())
 
-  userA User @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB User @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  userA    User      @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB    User      @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  jobRole  JobRole?  @relation("RoleMatches", fields: [jobRoleId], references: [id], onDelete: SetNull)
+  messages Message[]
 
   @@unique([userAId, userBId])
   @@index([userAId])
   @@index([userBId])
+  @@index([jobRoleId])
+}
+
+// ---------- Message ----------
+// Live WebSocket real-time chat persistence
+
+model Message {
+  id        Int       @id @default(autoincrement())
+  matchId   Int
+  senderId  Int
+  content   String    @db.Text
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  match  Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  sender User  @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, createdAt])
+  @@index([senderId])
+}
+
+// ---------- Notification ----------
+// Asynchronous notifications dispatched via RabbitMQ worker
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String   @db.VarChar(50) // 'MATCH', 'APPLICATION', 'MESSAGE', 'SYSTEM'
+  title     String   @db.VarChar(150)
+  body      String   @db.Text
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
 }
